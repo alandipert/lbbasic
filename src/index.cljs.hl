@@ -1,0 +1,99 @@
+(page "index.html"
+  (:require-macros [cljs.core.match :refer [match]])
+  (:require [instaparse.core :as insta]))
+
+(def banner
+  ;;{{
+  Little Bird Basic
+     __
+    ( ->
+    / )\
+   <_/_/
+  ;;}}
+  )
+
+(defc lines nil)
+(defc prompt-message nil)
+
+(defn print! [s]
+  (swap! lines #(str % s)))
+
+(defn println!
+  ([] (println! nil))
+  ([l] (print! (str l "\n"))))
+
+(def parse-line
+  (insta/parser
+   ;;{{
+   line         = (linum whitespace+)? stmt
+   linum        = #'(0|([1-9][0-9]*))'
+   stmt         = builtin
+   expr         = value | var
+   (* builtins *)
+   builtin      = print | cls
+   print        = <'print'> whitespace expr
+   cls          = <'cls'>
+   (* TODO arithmethic *)
+   (* literals *)
+   <value>      = string | float | int
+   string       = #'\"[^\"]+\"'
+   float        = #'[+-]?(0|([1-9][0-9]*))(\.[0-9]+)'
+   int          = #'[+-]?(0|([1-9][0-9]*))'
+   (* variable names *)
+   <var>        = var-float | var-int | var-str
+   var-float    = #'[a-zA-Z]+'
+   var-int      = #'[a-zA-Z]+\%'
+   var-str      = #'[a-zA-Z]+\$'
+   (* util *)
+   <whitespace> = <#'\s+'>
+   ;;}}
+   ))
+
+(defn eval
+  [prog]
+  (let [[x [y & zs]] prog]
+    (condp = [x y]
+      ;; Builtin statements
+      [:stmt :builtin]
+      (case (ffirst zs)
+        :print (println! (eval (second (first zs))))
+        :cls   (reset! lines nil))
+      ;; Literals
+      [:expr :int] (.parseInt js/window (first zs))
+      [:expr :string] (.parse js/JSON (first zs))
+      [:expr :float] (.parseFloat js/window (first zs)))))
+
+(with-init!
+  (println! banner)
+  (println!)
+  (println! "Ready.")
+  #_(eval [:stmt [:builtin [:print [:expr [:int "123"]]]]])
+  )
+
+(defmethod hoplon.core/do! :scroll-write
+  [elem _ str-cell]
+  (let [elem$ (js/jQuery elem)]
+    (.scrollTop elem$ (.prop elem$ "scrollHeight"))
+    (.val elem$ str-cell)))
+
+(html
+  (head
+    (link :href "app.css" :rel "stylesheet"))
+  (body
+    (textarea
+      :scroll-write lines
+      :id "output"
+      :disabled "true")
+    (let [input-line (cell nil)]
+      (form {:id "input"
+             :submit (fn []
+                       (let [[_ x] (parse-line @input-line)]
+                         (println (pr-str x))
+                         (eval x)
+                         ))}
+        (span :id "prompt-message" prompt-message)
+        (span :id "prompt" "➜")
+        (with-let [elem (input {:id "line-input"
+                                :type "text"
+                                :change #(reset! input-line @%)})]
+          (with-init! (.focus elem)))))))

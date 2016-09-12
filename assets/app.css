@@ -1,0 +1,73 @@
+@font-face {
+    font-family: 'Fira Mono';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Fira Mono'), local('FiraMono'), url('fira-mono.ttf') format('truetype');
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+*:focus {
+    outline: none;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    height: 100%;
+    display: flex;
+    min-height: 100%;
+    flex-direction: column;
+    overflow:hidden;
+}
+
+textarea#output[disabled="disabled"] {
+    padding: 1vw;
+    font-size: 1.2em;
+    box-sizing: border-box;
+    background-color: #eee;
+    border: none;
+    resize: none;
+    width: 100%;
+    flex: 1;
+    color: black;
+    font-family: 'Fira Mono', monospace;
+}
+
+form#input {
+    width: 100%;
+    height: 1.2em;
+    display: flex;
+    min-width: 100%;
+    flex-direction: row;
+    font-family: 'Fira Mono', monospace;
+}
+
+span#prompt-message {
+    display: block;
+    font-size: 1.2em;
+    padding: 0 3px 0 3px;
+    font-family: 'Fira Mono', monospace;
+}
+
+span#prompt {
+    display: block;
+    font-size: 1em;
+    padding: 0 3px 0 0;
+    font-family: 'Fira Mono', monospace;
+}
+
+input#line-input {
+    font-size: 1.2em;
+    border: none;
+    overflow: hidden;
+    font-family: 'Fira Mono', monospace;
+    flex: 1;
+}
+
