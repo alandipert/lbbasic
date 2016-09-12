@@ -7,8 +7,7 @@
                  [org.clojure/clojurescript "1.7.228"]
                  [tailrecursion/boot-jetty  "0.1.3"]
                  [tailrecursion/boot-heredoc "0.1.1"]
-                 [com.lucasbradstreet/instaparse-cljs "1.4.1.2"]
-                 [org.clojure/core.match "0.3.0-alpha4"]]
+                 [com.lucasbradstreet/instaparse-cljs "1.4.1.2"]]
  :source-paths #{"src"}
  :asset-paths  #{"assets"})
 
