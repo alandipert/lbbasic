@@ -95,7 +95,7 @@
 (defn make-runner
   ([init-machine]
    (make-runner init-machine {}))
-  ([init-machine opts] 
+  ([init-machine opts]
    (let [machine  (atom init-machine)
          running? (atom false)]
      (letfn [(run-next [prev]
