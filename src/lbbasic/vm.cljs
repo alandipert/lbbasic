@@ -25,24 +25,37 @@
 (defmethod eval :push
   [machine [_ val]]
   (-> machine
-      (update :stack conj val)))
+      (update :stack conj val)
+      (update :instruction inc)))
 
 (defmethod eval :dup
   [machine _]
-  (update machine :stack conj (peek (:stack machine))))
+  (-> machine
+      (update :stack conj (peek (:stack machine)))
+      (update :instruction inc)))
 
 (defmethod eval :store
   [machine [_ var-name]]
   (-> machine
       (assoc-in [:vars var-name] (peek (:stack machine)))
-      (update :stack pop)))
+      (update :stack pop)
+      (update :instruction inc)))
 
 (defmethod eval :load
   [machine [_ var-name]]
   (if-let [val (get-in machine [:vars var-name])]
-    (update machine :stack conj val)
+    (-> machine
+        (update :stack conj val)
+        (update :instruction inc))
     (throw (ex-info "Undefined var" {:name var-name
                                      :line (:line machine)}))))
+
+(defmethod eval :goto
+  [machine [_ goto-line]]
+  (if (contains? (:lines machine) goto-line)
+    (merge machine {:line goto-line :instruction 0})
+    (throw (ex-info "goto: goto-line doesn't exist" {:line (:line machine)
+                                                     :goto goto-line}))))
 
 (defn peekn [v n]
   (subvec v (- (count v) n) (count v)))
@@ -58,12 +71,16 @@
                          (str x y)
                          [js/Number js/Number]
                          (+ x y))]
-    (update machine :stack #(conj (popn % 2) ret))))
+    (-> machine
+        (update :stack #(conj (popn % 2) ret))
+        (update :instruction inc))))
 
 (defmethod eval :print
   [machine _]
   (println (peek (:stack machine)))
-  (update machine :stack pop))
+  (-> machine
+      (update :stack pop)
+      (update :instruction inc)))
 
 (defn run1
   [machine]
@@ -74,8 +91,7 @@
       (if-let [next-line (first (avl/nearest (:lines machine) > line))]
         (assoc machine :line next-line :instruction 0)
         machine)
-      (-> (eval machine (get instructions instruction))
-          (update :instruction inc)))))
+      (eval machine (get instructions instruction)))))
 
 ;; TODO roll this into a "make-runner" function that sets up the atoms,
 ;; break/pause callbacks

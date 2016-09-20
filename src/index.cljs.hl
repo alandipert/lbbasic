@@ -79,7 +79,8 @@
                            [:load "X"]
                            [:dup]
                            [:plus]
-                           [:print]])]
+                           [:print]
+                           [:goto 10]])]
     (vm/run m3 10)
     #_(println (dissoc (vm/run1 (vm/run1 (vm/run1 (vm/run1 (vm/run1 m2 10))))) :printfn))
     #_(println m2)))
