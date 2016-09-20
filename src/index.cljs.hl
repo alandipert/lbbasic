@@ -67,23 +67,21 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (let [m1 (vm/make-machine {:printfn println})
-        m2 (vm/load m1 10 [[:push "hello world"]
-                           [:store "X"]
-                           [:load "X"]
-                           [:print]])
-        m3 (vm/load m2 20 [[:push 123]
-                           [:dup]
-                           [:plus]
-                           [:print]
-                           [:load "X"]
-                           [:dup]
-                           [:plus]
-                           [:print]
-                           [:goto 10]])]
-    (vm/run m3 10)
-    #_(println (dissoc (vm/run1 (vm/run1 (vm/run1 (vm/run1 (vm/run1 m2 10))))) :printfn))
-    #_(println m2)))
+  (let [machine (vm/make-machine {:printfn println})
+        runner  (vm/make-runner machine)]
+    ((:load runner) 10 [[:push "hello world"]
+                        [:store "X"]
+                        [:load "X"]
+                        [:print]])
+    ((:load runner) 20 [[:push 123]
+                        [:dup]
+                        [:plus]
+                        [:print]
+                        [:load "X"]
+                        [:dup]
+                        [:plus]
+                        [:print]])
+    ((:run runner) 10)))
 
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]

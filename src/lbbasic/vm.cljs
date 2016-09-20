@@ -2,8 +2,7 @@
   (:require [clojure.data.avl :as avl]
             [adzerk.cljs-console :as log :include-macros true]))
 
-(defrecord Machine
-    [stack lines line instruction fors vars printfn])
+(defrecord Machine [stack lines line instruction fors vars printfn])
 
 (defn make-machine
   [{:keys [printfn]}]
@@ -82,7 +81,7 @@
       (update :stack pop)
       (update :instruction inc)))
 
-(defn run1
+(defn step
   [machine]
   (let [{:keys [line instruction]} machine
         instructions               (get-in machine [:lines line])]
@@ -93,22 +92,32 @@
         machine)
       (eval machine (get instructions instruction)))))
 
-;; TODO roll this into a "make-runner" function that sets up the atoms,
-;; break/pause callbacks
-(def break (atom nil))
-(def last-machine (atom nil))
-(defn run
-  ([machine line]
-   (run (merge machine {:line line :instruction 0})))
-  ([machine]
-   (reset! last-machine machine)
-   (.setTimeout js/window
-                #(let [prev-machine @last-machine
-                       next-machine (run1 @last-machine)]
-                   (if (not= prev-machine next-machine)
-                     (run next-machine)
-                     (log/info "Done")))
-                0)))
+(defn make-runner
+  ([init-machine]
+   (make-runner init-machine {}))
+  ([init-machine opts] 
+   (let [machine  (atom init-machine)
+         running? (atom false)]
+     (letfn [(run-next [prev]
+               (let [next (step prev)]
+                 (cond (= prev next)
+                       (do (log/info "Halted")
+                           (reset! running? false))
+                       (not @running?)
+                       (log/info "Stopped")
+                       :else (.setTimeout js/window run-next interval next))))]
+       {:run  (fn run*
+                ([]
+                 (if-let [first-line (first (keys (:lines @machine)))]
+                   (run* first-line)
+                   (log/error "No lines loaded")))
+                ([line]
+                 (reset! running? true)
+                 (swap! machine assoc :line line :instruction 0)
+                 (run-next @machine)))
+        :stop (fn [] (reset! running? false))
+        :load (fn [line instructions]
+                (swap! machine assoc-in [:lines line] instructions))}))))
 
 ;; 10 FOR X = 0 TO 10
 ;; 20 PRINT X
