@@ -7,7 +7,9 @@
                  [org.clojure/clojurescript "1.7.228"]
                  [tailrecursion/boot-jetty  "0.1.3"]
                  [tailrecursion/boot-heredoc "0.1.1"]
-                 [com.lucasbradstreet/instaparse-cljs "1.4.1.2"]]
+                 [com.lucasbradstreet/instaparse-cljs "1.4.1.2"]
+                 [org.clojure/data.avl "0.0.16"]
+                 [adzerk/cljs-console "0.1.1"]]
  :source-paths #{"src"}
  :asset-paths  #{"assets"})
 
@@ -23,8 +25,9 @@
   []
   (comp
    (watch)
-   (speak)
-   (heredoc)
+   (speak :theme "woodblock")
+   (heredoc :file-ext ".hl")
+   (heredoc :file-ext ".cljs")
    (hoplon)
    (reload)
    ;; Suppress because of core.match
@@ -35,7 +38,8 @@
   "Build lbbasic for production deployment."
   []
   (comp
-   (heredoc)
+   (heredoc :file-ext ".hl")
+   (heredoc :file-ext ".cljs")
    (hoplon)
    (cljs :optimizations :advanced)
    (target :dir #{"target"})))
