@@ -60,7 +60,6 @@
 ;; Flow control
 
 (defn truthy? [x] (not= x 0))
-(defn falsy?  [x] (not (truthy? x)))
 
 (defmethod inst :goto
   [machine [_ goto-line]]
@@ -69,8 +68,31 @@
     (throw (ex-info "goto: goto-line doesn't exist"
                     {:line (:line machine) :goto goto-line}))))
 
-;; ifjmp
-;; ifnjmp
+;; IF 1 == 2 THEN PRINT "foo" ELSE PRINT "bar"
+;; [:push 1]
+;; [:push 2]
+;; [:==]
+;; [:ifjmp 4]
+;; [:push "bar"]
+;; [:print 1 \space]
+;; [:jmp 3]
+;; [:push "foo"]
+;; [:print 1 \space]
+;; ...
+
+(defmethod inst :ifjmp
+  [machine [_ n]]
+  (if (truthy? (peek (:stack machine)))
+    (-> machine
+        (update :stack pop)
+        (update :inst-ptr + n 1))
+    (-> machine
+        (update :stack pop)
+        (update :inst-ptr inc))))
+
+(defmethod inst :jmp
+  [machine [_ n]]
+  (update machine :inst-ptr + n))
 
 ;; Functions
 
