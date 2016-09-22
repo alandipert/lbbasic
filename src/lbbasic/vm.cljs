@@ -1,111 +1,147 @@
 (ns lbbasic.vm
   (:require [clojure.data.avl :as avl]
-            [adzerk.cljs-console :as log :include-macros true]))
+            [lbbasic.util :refer [peekn popn]]
+            [adzerk.cljs-console :as log :include-macros true]
+            [clojure.string :as str]))
 
-(defrecord Machine [stack lines line instruction fors vars printfn])
+(defrecord Machine [stack lines line inst-ptr fors vars printfn])
 
 (defn make-machine
   [{:keys [printfn]}]
   (map->Machine
-   {:stack        []
-    :lines        (avl/sorted-map)
-    :line         nil
-    :instruction  nil
-    :fors         []
-    :vars         {}
-    :printfn      printfn}))
+   {:stack           []
+    :lines           (avl/sorted-map)
+    :line            nil
+    :inst-ptr nil
+    :fors            []
+    :vars            {}
+    :printfn         printfn}))
 
 (defn load
   ([machine line instructions]
    (update machine :lines assoc line instructions)))
 
-(defmulti eval (fn [machine [op & args]] op))
+;; VM instructions
 
-(defmethod eval :push
+(defmulti inst (fn [machine [op & args]] op))
+
+;; Basic stack manipulation
+
+(defmethod inst :push
   [machine [_ val]]
   (-> machine
       (update :stack conj val)
-      (update :instruction inc)))
+      (update :inst-ptr inc)))
 
-(defmethod eval :dup
+(defmethod inst :dup
   [machine _]
   (-> machine
       (update :stack conj (peek (:stack machine)))
-      (update :instruction inc)))
+      (update :inst-ptr inc)))
 
-(defmethod eval :store
+;; Setting/getting variables
+
+(defmethod inst :store
   [machine [_ var-name]]
   (-> machine
       (assoc-in [:vars var-name] (peek (:stack machine)))
       (update :stack pop)
-      (update :instruction inc)))
+      (update :inst-ptr inc)))
 
-(defmethod eval :load
+(defmethod inst :load
   [machine [_ var-name]]
   (if-let [val (get-in machine [:vars var-name])]
     (-> machine
         (update :stack conj val)
-        (update :instruction inc))
-    (throw (ex-info "Undefined var" {:name var-name
+        (update :inst-ptr inc))
+    (throw (ex-info "undefined var" {:name var-name
                                      :line (:line machine)}))))
 
-(defmethod eval :goto
+;; Flow control
+
+(defn truthy? [x] (not= x 0))
+(defn falsy?  [x] (not (truthy? x)))
+
+(defmethod inst :goto
   [machine [_ goto-line]]
   (if (contains? (:lines machine) goto-line)
-    (merge machine {:line goto-line :instruction 0})
-    (throw (ex-info "goto: goto-line doesn't exist" {:line (:line machine)
-                                                     :goto goto-line}))))
+    (assoc machine :line goto-line :inst-ptr 0)
+    (throw (ex-info "goto: goto-line doesn't exist"
+                    {:line (:line machine) :goto goto-line}))))
 
-(defn peekn [v n]
-  (subvec v (- (count v) n) (count v)))
+;; ifjmp
+;; ifnjmp
 
-(defn popn [v n]
-  (subvec v 0 (- (count v) n)))
+;; Functions
 
-(defmethod eval :plus
+(defmethod inst :plus
   [machine _]
   (let [[x y :as args] (peekn (:stack machine) 2)
         ret            (condp = (mapv type args)
                          [js/String js/String]
                          (str x y)
                          [js/Number js/Number]
-                         (+ x y))]
+                         (+ x y)
+                         :else (throw (ex-info "plus: unknown argument types"
+                                               {:types (mapv type args)
+                                                :line (:line machine)})))]
     (-> machine
         (update :stack #(conj (popn % 2) ret))
-        (update :instruction inc))))
+        (update :inst-ptr inc))))
 
-(defmethod eval :print
-  [machine _]
-  (println (peek (:stack machine)))
-  (-> machine
-      (update :stack pop)
-      (update :instruction inc)))
+(defn bool [x] (if x 1 0))
+
+;; Numeric comparisons
+
+(defn num-compare-inst
+  [compare-fn {:keys [stack] :as machine}]
+  (let [[x y] (peekn stack 2)]
+    (-> machine
+        (update :stack popn 2)
+        (update :stack conj (bool (< x y))))))
+
+(defmethod inst :<  [machine _] (num-compare-inst < machine))
+(defmethod inst :<= [machine _] (num-compare-inst <= machine))
+(defmethod inst :>  [machine _] (num-compare-inst > machine))
+(defmethod inst :>= [machine _] (num-compare-inst >= machine))
+
+;; I/O
+
+(defmethod inst :print
+  [{:keys [stack printfn] :as machine} [_ argc separator]]
+  (let [args (peekn stack argc)]
+    (printfn (str/join (or separator \space) args))
+    (-> machine
+        (update :stack popn argc)
+        (update :inst-ptr inc))))
 
 (defn step
   [machine]
-  (let [{:keys [line instruction]} machine
+  (let [{:keys [line inst-ptr]} machine
         instructions               (get-in machine [:lines line])]
-    (log/debug "#{line} #{instruction} ~(get-in machine [:lines line instruction 0])")
-    (if (= (count instructions) instruction)
+    (log/debug "stack: ~(:stack machine)")
+    (log/debug "instr: #{line} #{inst-ptr} ~(get-in machine [:lines line inst-ptr])")
+    (if (= (count instructions) inst-ptr)
       (if-let [next-line (first (avl/nearest (:lines machine) > line))]
-        (assoc machine :line next-line :instruction 0)
+        (assoc machine :line next-line :inst-ptr 0)
         machine)
-      (eval machine (get instructions instruction)))))
+      (inst machine (get instructions inst-ptr)))))
 
 (defn make-runner
-  ([init-machine]
-   (make-runner init-machine {}))
-  ([init-machine opts]
+  ([init-machine] (make-runner init-machine {}))
+  ([init-machine {:keys [interval]
+                  :or {interval 0}
+                  :as opts}]
    (let [machine  (atom init-machine)
          running? (atom false)]
-     (letfn [(run-next [prev]
+     (letfn [(step-trampoline [prev]
                (let [next (step prev)]
                  (cond (= prev next)
                        (do (log/info "Halted")
                            (reset! running? false))
                        (not @running?)
                        (log/info "Stopped")
-                       :else (.setTimeout js/window run-next interval next))))]
+                       :else (.setTimeout js/window step-trampoline interval next))))]
        {:run  (fn run*
                 ([]
                  (if-let [first-line (first (keys (:lines @machine)))]
@@ -113,8 +149,8 @@
                    (log/error "No lines loaded")))
                 ([line]
                  (reset! running? true)
-                 (swap! machine assoc :line line :instruction 0)
-                 (run-next @machine)))
+                 (swap! machine assoc :line line :inst-ptr 0)
+                 (step-trampoline @machine)))
         :stop (fn [] (reset! running? false))
         :load (fn [line instructions]
                 (swap! machine assoc-in [:lines line] instructions))}))))

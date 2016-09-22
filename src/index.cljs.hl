@@ -67,21 +67,30 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (let [machine (vm/make-machine {:printfn println})
-        runner  (vm/make-runner machine)]
+  (let [machine (vm/make-machine {:printfn println!})
+        runner  (vm/make-runner machine {:interval 1000})]
     ((:load runner) 10 [[:push "hello world"]
                         [:store "X"]
                         [:load "X"]
-                        [:print]])
+                        [:load "X"]
+                        [:print 2 \tab]
+                        [:push "cool"]
+                        [:store "X"]])
+    ((:load runner) 15 [[:push "wow"]
+                        [:push "that's"]
+                        [:push "neat"]
+                        [:print 3 \tab]])
     ((:load runner) 20 [[:push 123]
                         [:dup]
                         [:plus]
-                        [:print]
+                        [:print 1 \space]
                         [:load "X"]
                         [:dup]
                         [:plus]
-                        [:print]])
-    ((:run runner) 10)))
+                        [:print 1 \space]])
+    ((:load runner) 30 [[:goto 15]])
+    ((:run runner) 10)
+    (.setTimeout js/window #((:stop runner)) 5000)))
 
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]
