@@ -82,16 +82,18 @@
 
 (defmethod inst :ifjmp
   [machine [_ n]]
+  {:pre [(> n 0)]}
   (if (truthy? (peek (:stack machine)))
     (-> machine
         (update :stack pop)
-        (update :inst-ptr + n 1))
+        (update :inst-ptr + n))
     (-> machine
         (update :stack pop)
         (update :inst-ptr inc))))
 
 (defmethod inst :jmp
   [machine [_ n]]
+  {:pre [(> n 0)]}
   (update machine :inst-ptr + n))
 
 ;; Functions
