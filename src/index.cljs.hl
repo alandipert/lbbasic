@@ -88,8 +88,11 @@
     (vm/load-program! vm prog)
     ;; (.setTimeout js/window #(vm/stop! vm) 1000)
     (-> (vm/run! vm)
-        (.then (fn [ms] (log/info "Halted after #{ms} ms")))
-        (.catch (fn [ms] (log/info "Stopped by user after #{ms} ms"))))))
+        (.then
+         ;; Halted cleanly
+         (fn [ms] (log/info "Halted after #{ms} ms"))
+         ;; Stopped early
+         (fn [ms] (log/info "Stopped by user after #{ms} ms"))))))
 
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]
