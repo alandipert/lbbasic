@@ -67,30 +67,33 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (let [machine (vm/make-machine {:printfn println!})
-        runner  (vm/make-runner machine {:interval 1000})]
-    ((:load runner) 10 [[:push "hello world"]
-                        [:store "X"]
-                        [:load "X"]
-                        [:load "X"]
-                        [:print 2 \tab]
-                        [:push "cool"]
-                        [:store "X"]])
-    ((:load runner) 15 [[:push "wow"]
-                        [:push "that's"]
-                        [:push "neat"]
-                        [:print 3 \tab]])
-    ((:load runner) 20 [[:push 123]
-                        [:dup]
-                        [:plus]
-                        [:print 1 \space]
-                        [:load "X"]
-                        [:dup]
-                        [:plus]
-                        [:print 1 \space]])
-    ((:load runner) 30 [[:goto 15]])
-    ((:run runner) 10)
-    (.setTimeout js/window #((:stop runner)) 5000)))
+  (let [vm   (vm/make-vm {:interval 0 :printfn println!})
+        prog {10 [[:push 99]
+                  [:store "N"]]
+              20 [[:load "N"]
+                  [:push " bottles of beer on the wall, "]
+                  [:load "N"]
+                  [:push " bottles of beer."]
+                  [:print 4]]
+              30 [[:push "Take one down and pass it around, "]
+                  [:load "N"]
+                  [:push 1]
+                  [:-]
+                  [:push " bottles of beer on the wall"]
+                  [:print 3]]
+              40 [[:load "N"]
+                  [:push 1]
+                  [:>]
+                  [:ifjmp 2]
+                  [:jmp 7]
+                  [:print 0]
+                  [:load "N"]
+                  [:push 1]
+                  [:-]
+                  [:store "N"]
+                  [:goto 20]]}]
+    (vm/load-program! vm prog)
+    (vm/run! vm)))
 
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]
@@ -110,9 +113,7 @@
       (form {:id "input"
              :submit (fn []
                        (let [[_ x] (parse-line @input-line)]
-                         (println (pr-str x))
-                         (eval x)
-                         ))}
+                         (println (pr-str x))))}
         (span :id "prompt-message" prompt-message)
         (span :id "prompt" "➜")
         (with-let [elem (input {:id "line-input"

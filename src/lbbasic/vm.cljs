@@ -1,4 +1,5 @@
 (ns lbbasic.vm
+  (:refer-clojure :exclude [run!])
   (:require [clojure.data.avl :as avl]
             [lbbasic.util :refer [peekn popn]]
             [adzerk.cljs-console :as log :include-macros true]
@@ -6,8 +7,8 @@
 
 (defrecord Machine [stack lines line inst-ptr fors vars printfn])
 
-(defn make-machine
-  [{:keys [printfn]}]
+(defn new-machine
+  []
   (map->Machine
    {:stack           []
     :lines           (avl/sorted-map)
@@ -15,7 +16,7 @@
     :inst-ptr nil
     :fors            []
     :vars            {}
-    :printfn         printfn}))
+    :printfn         #(throw (ex-info "printfn undefined" {}))}))
 
 (defn load
   ([machine line instructions]
@@ -59,7 +60,7 @@
 
 ;; Flow control
 
-(defn truthy? [x] (not= x 0))
+(defn truth [x] (not= x 0))
 
 (defmethod inst :goto
   [machine [_ goto-line]]
@@ -68,22 +69,10 @@
     (throw (ex-info "goto: goto-line doesn't exist"
                     {:line (:line machine) :goto goto-line}))))
 
-;; IF 1 == 2 THEN PRINT "foo" ELSE PRINT "bar"
-;; [:push 1]
-;; [:push 2]
-;; [:==]
-;; [:ifjmp 4]
-;; [:push "bar"]
-;; [:print 1 \space]
-;; [:jmp 3]
-;; [:push "foo"]
-;; [:print 1 \space]
-;; ...
-
 (defmethod inst :ifjmp
   [machine [_ n]]
   {:pre [(> n 0)]}
-  (if (truthy? (peek (:stack machine)))
+  (if (truth (peek (:stack machine)))
     (-> machine
         (update :stack pop)
         (update :inst-ptr + n))
@@ -98,7 +87,7 @@
 
 ;; Functions
 
-(defmethod inst :plus
+(defmethod inst :+
   [machine _]
   (let [[x y :as args] (peekn (:stack machine) 2)
         ret            (condp = (mapv type args)
@@ -113,28 +102,49 @@
         (update :stack #(conj (popn % 2) ret))
         (update :inst-ptr inc))))
 
-(defn bool [x] (if x 1 0))
+;; Numeric functions
+
+(defn op-numeric
+  [op-fn op-name {:keys [stack] :as machine}]
+  (let [[x y :as args] (peekn (:stack machine) 2)
+        ret            (condp = (mapv type args)
+                         [js/Number js/Number]
+                         (op-fn x y)
+                         :else (throw (ex-info (str op-name ": argument(s) not numeric")
+                                               {:types (mapv type args)
+                                                :line (:line machine)})))]
+    (-> machine
+        (update :stack #(conj (popn % 2) ret))
+        (update :inst-ptr inc))))
+
+(defmethod inst :- [machine _] (op-numeric - "minus" machine))
+(defmethod inst :* [machine _] (op-numeric - "times" machine))
+(defmethod inst :/ [machine _] (op-numeric - "divide" machine))
+(defmethod inst :% [machine _] (op-numeric - "mod" machine))
 
 ;; Numeric comparisons
 
-(defn num-compare-inst
+(defn bool [x] (if x 1 0))
+
+(defn compare-numeric
   [compare-fn {:keys [stack] :as machine}]
   (let [[x y] (peekn stack 2)]
     (-> machine
         (update :stack popn 2)
-        (update :stack conj (bool (< x y))))))
+        (update :stack conj (bool (compare-fn x y)))
+        (update :inst-ptr inc))))
 
-(defmethod inst :<  [machine _] (num-compare-inst < machine))
-(defmethod inst :<= [machine _] (num-compare-inst <= machine))
-(defmethod inst :>  [machine _] (num-compare-inst > machine))
-(defmethod inst :>= [machine _] (num-compare-inst >= machine))
+(defmethod inst :<  [machine _] (compare-numeric < machine))
+(defmethod inst :<= [machine _] (compare-numeric <= machine))
+(defmethod inst :>  [machine _] (compare-numeric > machine))
+(defmethod inst :>= [machine _] (compare-numeric >= machine))
 
 ;; I/O
 
 (defmethod inst :print
-  [{:keys [stack printfn] :as machine} [_ argc separator]]
+  [{:keys [stack printfn] :as machine} [_ argc & [separator]]]
   (let [args (peekn stack argc)]
-    (printfn (str/join (or separator \space) args))
+    (printfn (str/join (or separator "") args))
     (-> machine
         (update :stack popn argc)
         (update :inst-ptr inc))))
@@ -151,12 +161,17 @@
         machine)
       (inst machine (get instructions inst-ptr)))))
 
-(defn make-runner
-  ([init-machine] (make-runner init-machine {}))
-  ([init-machine {:keys [interval]
+(defrecord VirtualMachine [run stop load])
+
+(defn make-vm
+  ([opts] (make-vm (new-machine) opts))
+  ([init-machine {:keys [interval printfn]
                   :or {interval 0}
                   :as opts}]
-   (let [machine  (atom init-machine)
+   (let [machine  (atom (assoc init-machine
+                               ;; Initialize machine with user-supplied output
+                               ;; functions.
+                               :printfn printfn))
          running? (atom false)]
      (letfn [(step-trampoline [prev]
                (let [next (step prev)]
@@ -166,18 +181,38 @@
                        (not @running?)
                        (log/info "Stopped")
                        :else (.setTimeout js/window step-trampoline interval next))))]
-       {:run  (fn run*
-                ([]
-                 (if-let [first-line (first (keys (:lines @machine)))]
-                   (run* first-line)
-                   (log/error "No lines loaded")))
-                ([line]
-                 (reset! running? true)
-                 (swap! machine assoc :line line :inst-ptr 0)
-                 (step-trampoline @machine)))
-        :stop (fn [] (reset! running? false))
-        :load (fn [line instructions]
-                (swap! machine assoc-in [:lines line] instructions))}))))
+       (map->VirtualMachine
+        {:run  (fn run*
+                 ([]
+                  (if-let [first-line (first (keys (:lines @machine)))]
+                    (run* first-line)
+                    (log/error "No lines loaded")))
+                 ([line]
+                  (reset! running? true)
+                  (swap! machine assoc :line line :inst-ptr 0)
+                  (step-trampoline @machine)))
+         :stop (fn [] (reset! running? false))
+         :load (fn [line instructions]
+                 (swap! machine assoc-in [:lines line] instructions))})))))
+
+(defn load-line!
+  [vm line insts]
+  ((:load vm) line insts)
+  vm)
+
+(defn load-program!
+  [vm prog]
+  (doseq [[line insts] prog] (load-line! vm line insts))
+  vm)
+
+(defn run!
+  [vm & args]
+  (apply (:run vm) args)
+  vm)
+
+(defn stop!
+  [vm]
+  ((:stop vm)))
 
 ;; 10 FOR X = 0 TO 10
 ;; 20 PRINT X
