@@ -172,6 +172,10 @@
 
 (defrecord VirtualMachine [run stop load])
 
+(defn date-minus
+  [d1 d2]
+  (- (.valueOf d1) (.valueOf d2)))
+
 (defn make-vm
   ([opts] (make-vm (new-machine) opts))
   ([init-machine {:keys [interval
@@ -187,14 +191,15 @@
                                  :printfn printfn))
          running?   (atom false)
          started-at (atom nil)
-         halted-fn  (atom nil)]
+         halted-fn  (atom nil)
+         stopped-fn (atom nil)]
      (letfn [(trampoline [prev]
                (let [next (stepN prev pipeline-size)]
                  (cond (= prev next)
-                       (do (@halted-fn (- (.valueOf (js/Date.)) (.valueOf @started-at)))
+                       (do (@halted-fn (date-minus (js/Date.) @started-at))
                            (reset! running? false))
                        (not @running?)
-                       (log/info "Stopped")
+                       (@stopped-fn (date-minus (js/Date.) @started-at))
                        :else (.setTimeout js/window trampoline interval next))))]
        (map->VirtualMachine
         {:run  (fn run*
@@ -204,8 +209,10 @@
                     (log/error "No lines loaded")))
                  ([line]
                   (if @running?
-                    (throw (ex-info "VM is already running" {}))
-                    (with-let [prom (js/Promise. (fn [resolve] (reset! halted-fn resolve)))]
+                    (throw (js/Error. "VM is already running"))
+                    (with-let [prom (js/Promise. (fn [resolve reject]
+                                                   (reset! halted-fn resolve)
+                                                   (reset! stopped-fn reject)))]
                       (reset! started-at (js/Date.))
                       (reset! running? true)
                       (swap! machine assoc :line line :inst-ptr 0)
