@@ -176,6 +176,7 @@
   ([init-machine {:keys [interval
                          pipeline-size
                          printfn]
+                  ;; TODO defaults for perf, not debug
                   :or   {interval      0
                          pipeline-size 1}
                   :as   opts}]
