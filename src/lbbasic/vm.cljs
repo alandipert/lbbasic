@@ -187,7 +187,7 @@
      (letfn [(trampoline [prev]
                (let [next (stepN prev pipeline-size)]
                  (cond (= prev next)
-                       (do (log/info "Halted")
+                       (do (.log js/console (str "Halted at " (js/Date.)))
                            (reset! running? false))
                        (not @running?)
                        (log/info "Stopped")
@@ -216,6 +216,7 @@
   (doseq [[line insts] prog] (load-line! vm line insts))
   vm)
 
+;; TODO return a promise, useful for timing
 (defn run!
   [vm & args]
   (apply (:run vm) args)

@@ -95,6 +95,7 @@
                   [:store "N"]
                   [:goto 20]]}]
     (vm/load-program! vm prog)
+    (.log js/console (str "Started at " (js/Date.)))
     (vm/run! vm)))
 
 (defmethod hoplon.core/do! :scroll-write
