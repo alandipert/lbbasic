@@ -57,6 +57,10 @@
   (let [vm   (vm/make-vm {:interval      0
                           :pipeline-size 20
                           :printfn       println!})
+        ;; 10 N = 99
+        ;; 20 PRINT N;" bottles of beer on the wall, ";N;" bottles of beer."
+        ;; 30 PRINT "Take one down and pass it around, ";N - 1;" bottles of beer on the wall."
+        ;; 40 IF N > 1 THEN PRINT:N = N - 1:GOTO 20
         prog {10 [[:push 99]
                   [:store "N"]]
               20 [[:load "N"]
@@ -68,7 +72,7 @@
                   [:load "N"]
                   [:push 1]
                   [:-]
-                  [:push " bottles of beer on the wall"]
+                  [:push " bottles of beer on the wall."]
                   [:print 3]]
               40 [[:load "N"]
                   [:push 1]
