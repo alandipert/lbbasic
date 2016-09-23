@@ -30,7 +30,7 @@ textarea#output[disabled="disabled"] {
     width: 100%;
     flex: 1;
     color: black;
-    font-family: 'Fira Mono', monospace;
+    font-family: monospace;
 }
 
 form#input {
@@ -39,28 +39,29 @@ form#input {
     display: flex;
     min-width: 100%;
     flex-direction: row;
-    font-family: 'Fira Mono', monospace;
+    padding: 10px 0 10px 0;
+    font-family: monospace;
 }
 
 span#prompt-message {
     display: block;
     font-size: 1.2em;
     padding: 0 3px 0 3px;
-    font-family: 'Fira Mono', monospace;
+    font-family: monospace;
 }
 
 span#prompt {
     display: block;
-    font-size: 1em;
-    padding: 0 3px 0 0;
-    font-family: 'Fira Mono', monospace;
+    font-size: 1.2em;
+    font-family: monospace;
+    padding-right: 3px;
 }
 
 input#line-input {
     font-size: 1.2em;
     border: none;
     overflow: hidden;
-    font-family: 'Fira Mono', monospace;
+    font-family: monospace;
     flex: 1;
 }
 
