@@ -176,9 +176,9 @@
   ([init-machine {:keys [interval
                          pipeline-size
                          printfn]
-                  :or {interval 0
-                       pipeline-size 1}
-                  :as opts}]
+                  :or   {interval      0
+                         pipeline-size 1}
+                  :as   opts}]
    (let [machine  (atom (assoc init-machine
                                ;; Initialize machine with user-supplied output
                                ;; functions.
