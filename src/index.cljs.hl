@@ -1,5 +1,6 @@
 (page "index.html"
   (:require [instaparse.core :as insta]
+            [adzerk.cljs-console :as log :include-macros true]
             [lbbasic.vm :as vm]))
 
 (def banner
@@ -53,9 +54,9 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (let [vm   (vm/make-vm {:interval 0
+  (let [vm   (vm/make-vm {:interval      0
                           :pipeline-size 20
-                          :printfn println!})
+                          :printfn       println!})
         prog {10 [[:push 99]
                   [:store "N"]]
               20 [[:load "N"]
@@ -81,8 +82,8 @@
                   [:store "N"]
                   [:goto 20]]}]
     (vm/load-program! vm prog)
-    (.log js/console (str "Started at " (js/Date.)))
-    (vm/run! vm)))
+    (doto (vm/run! vm)
+      (.then (fn [ms] (log/info "Halted after #{ms} ms"))))))
 
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]

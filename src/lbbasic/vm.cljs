@@ -1,5 +1,6 @@
 (ns lbbasic.vm
   (:refer-clojure :exclude [run!])
+  (:require-macros [javelin.core :refer [with-let]])
   (:require [clojure.data.avl :as avl]
             [lbbasic.util :refer [peekn popn]]
             [adzerk.cljs-console :as log :include-macros true]
@@ -180,15 +181,17 @@
                   :or   {interval      0
                          pipeline-size 1}
                   :as   opts}]
-   (let [machine  (atom (assoc init-machine
-                               ;; Initialize machine with user-supplied output
-                               ;; functions.
-                               :printfn printfn))
-         running? (atom false)]
+   (let [machine    (atom (assoc init-machine
+                                 ;; Initialize machine with user-supplied output
+                                 ;; functions.
+                                 :printfn printfn))
+         running?   (atom false)
+         started-at (atom nil)
+         halted-fn  (atom nil)]
      (letfn [(trampoline [prev]
                (let [next (stepN prev pipeline-size)]
                  (cond (= prev next)
-                       (do (.log js/console (str "Halted at " (js/Date.)))
+                       (do (@halted-fn (- (.valueOf (js/Date.)) (.valueOf @started-at)))
                            (reset! running? false))
                        (not @running?)
                        (log/info "Stopped")
@@ -200,9 +203,13 @@
                     (run* first-line)
                     (log/error "No lines loaded")))
                  ([line]
-                  (reset! running? true)
-                  (swap! machine assoc :line line :inst-ptr 0)
-                  (trampoline @machine)))
+                  (if @running?
+                    (throw (ex-info "VM is already running" {}))
+                    (with-let [prom (js/Promise. (fn [resolve] (reset! halted-fn resolve)))]
+                      (reset! started-at (js/Date.))
+                      (reset! running? true)
+                      (swap! machine assoc :line line :inst-ptr 0)
+                      (trampoline @machine)))))
          :stop (fn [] (reset! running? false))
          :load (fn [line instructions]
                  (swap! machine assoc-in [:lines line] instructions))})))))
@@ -217,11 +224,9 @@
   (doseq [[line insts] prog] (load-line! vm line insts))
   vm)
 
-;; TODO return a promise, useful for timing
 (defn run!
   [vm & args]
-  (apply (:run vm) args)
-  vm)
+  (apply (:run vm) args))
 
 (defn stop!
   [vm]
