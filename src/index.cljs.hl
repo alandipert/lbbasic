@@ -49,20 +49,6 @@
    ;;}}
    ))
 
-(defn eval
-  [prog]
-  (let [[x [y & zs]] prog]
-    (condp = [x y]
-      ;; Builtin statements
-      [:stmt :builtin]
-      (case (ffirst zs)
-        :print (println! (eval (second (first zs))))
-        :cls   (reset! lines nil))
-      ;; Literals
-      [:expr :int] (.parseInt js/window (first zs))
-      [:expr :string] (.parse js/JSON (first zs))
-      [:expr :float] (.parseFloat js/window (first zs)))))
-
 (with-init!
   (println! banner)
   (println!)
