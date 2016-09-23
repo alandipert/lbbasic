@@ -1,10 +1,3 @@
-@font-face {
-    font-family: 'Fira Mono';
-    font-style: normal;
-    font-weight: 400;
-    src: local('Fira Mono'), local('FiraMono'), url('fira-mono.ttf') format('truetype');
-}
-
 * {
     margin: 0;
     padding: 0;
