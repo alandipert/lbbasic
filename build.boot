@@ -37,7 +37,7 @@
 (deftask prod
   "Build lbbasic for production deployment."
   []
-  (System/setProperty "CLJS_LOG_LEVEL" "ERROR")
+  (System/setProperty "CLJS_LOG_LEVEL" "INFO")
   (comp
    (heredoc :file-ext ".hl")
    (heredoc :file-ext ".cljs")
