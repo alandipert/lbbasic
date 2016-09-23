@@ -149,10 +149,10 @@
         (update :stack popn argc)
         (update :inst-ptr inc))))
 
-(defn step
+(defn step1
   [machine]
   (let [{:keys [line inst-ptr]} machine
-        instructions               (get-in machine [:lines line])]
+        instructions            (get-in machine [:lines line])]
     (log/debug "stack: ~(:stack machine)")
     (log/debug "instr: #{line} #{inst-ptr} ~(get-in machine [:lines line inst-ptr])")
     (if (= (count instructions) inst-ptr)
@@ -161,12 +161,24 @@
         machine)
       (inst machine (get instructions inst-ptr)))))
 
+(defn stepN
+  ([machine pipeline-size]
+   (stepN machine (step1 machine) (dec pipeline-size)))
+  ([prev-machine machine pipeline-size]
+   (if (or (zero? pipeline-size)
+           (= prev-machine machine))
+     machine
+     (recur machine (step1 machine) (dec pipeline-size)))))
+
 (defrecord VirtualMachine [run stop load])
 
 (defn make-vm
   ([opts] (make-vm (new-machine) opts))
-  ([init-machine {:keys [interval printfn]
-                  :or {interval 0}
+  ([init-machine {:keys [interval
+                         pipeline-size
+                         printfn]
+                  :or {interval 0
+                       pipeline-size 1}
                   :as opts}]
    (let [machine  (atom (assoc init-machine
                                ;; Initialize machine with user-supplied output
@@ -174,7 +186,7 @@
                                :printfn printfn))
          running? (atom false)]
      (letfn [(step-trampoline [prev]
-               (let [next (step prev)]
+               (let [next (stepN prev pipeline-size)]
                  (cond (= prev next)
                        (do (log/info "Halted")
                            (reset! running? false))
@@ -212,7 +224,8 @@
 
 (defn stop!
   [vm]
-  ((:stop vm)))
+  ((:stop vm))
+  vm)
 
 ;; 10 FOR X = 0 TO 10
 ;; 20 PRINT X

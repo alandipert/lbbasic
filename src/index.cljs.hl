@@ -67,7 +67,9 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (let [vm   (vm/make-vm {:interval 0 :printfn println!})
+  (let [vm   (vm/make-vm {:interval 0
+                          :pipeline-size 20
+                          :printfn println!})
         prog {10 [[:push 99]
                   [:store "N"]]
               20 [[:load "N"]
