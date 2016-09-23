@@ -165,8 +165,7 @@
   ([machine pipeline-size]
    (stepN machine (step1 machine) (dec pipeline-size)))
   ([prev-machine machine pipeline-size]
-   (if (or (zero? pipeline-size)
-           (= prev-machine machine))
+   (if (or (zero? pipeline-size) (= prev-machine machine))
      machine
      (recur machine (step1 machine) (dec pipeline-size)))))
 
@@ -185,14 +184,14 @@
                                ;; functions.
                                :printfn printfn))
          running? (atom false)]
-     (letfn [(step-trampoline [prev]
+     (letfn [(trampoline [prev]
                (let [next (stepN prev pipeline-size)]
                  (cond (= prev next)
                        (do (log/info "Halted")
                            (reset! running? false))
                        (not @running?)
                        (log/info "Stopped")
-                       :else (.setTimeout js/window step-trampoline interval next))))]
+                       :else (.setTimeout js/window trampoline interval next))))]
        (map->VirtualMachine
         {:run  (fn run*
                  ([]
@@ -202,7 +201,7 @@
                  ([line]
                   (reset! running? true)
                   (swap! machine assoc :line line :inst-ptr 0)
-                  (step-trampoline @machine)))
+                  (trampoline @machine)))
          :stop (fn [] (reset! running? false))
          :load (fn [line instructions]
                  (swap! machine assoc-in [:lines line] instructions))})))))
