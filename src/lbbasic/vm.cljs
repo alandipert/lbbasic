@@ -151,11 +151,12 @@
         (update :inst-ptr inc))))
 
 (defn step1
-  [machine]
+  [run-state debug? machine]
   (let [{:keys [line inst-ptr]} machine
         instructions            (get-in machine [:lines line])]
-    (log/debug "stack: ~(:stack machine)")
-    (log/debug "instr: #{line} #{inst-ptr} ~(get-in machine [:lines line inst-ptr])")
+    (when debug?
+      (.debug js/console (str "stack: " (pr-str (:stack machine))))
+      (.debug js/console (str "instr: " line " " inst-ptr " " (get-in machine [:lines line inst-ptr]))))
     (if (= (count instructions) inst-ptr)
       (if-let [next-line (first (avl/nearest (:lines machine) > line))]
         (assoc machine :line next-line :inst-ptr 0)
@@ -163,63 +164,101 @@
       (inst machine (get instructions inst-ptr)))))
 
 (defn stepN
-  ([machine pipeline-size]
-   (stepN machine (step1 machine) (dec pipeline-size)))
-  ([prev-machine machine pipeline-size]
-   (if (or (zero? pipeline-size) (= prev-machine machine))
-     machine
-     (recur machine (step1 machine) (dec pipeline-size)))))
+  ([run-state debug? machine pipeline-size]
+   (stepN run-state debug? machine (step1 run-state debug? machine) 1 (dec pipeline-size)))
+  ([run-state debug? prev-machine machine inst-count pipeline-size]
+   (cond (zero? pipeline-size)
+         (do (swap! run-state update :inst-count + inst-count)
+             machine)
+         (= prev-machine machine)
+         (do (swap! run-state update :inst-count + (dec inst-count))
+             machine)
+         :else (recur run-state debug? machine (step1 run-state debug? machine) (inc inst-count) (dec pipeline-size)))))
 
-(defrecord VirtualMachine [run stop load])
+(defrecord RunState [machine running? debug? started-at inst-count halted-fn stopped-fn])
+(defrecord RunningMachine [run stop load])
 
 (defn date-minus
   [d1 d2]
   (- (.valueOf d1) (.valueOf d2)))
 
+(defn make-end-status
+  [end-state]
+  (let [elapsed (date-minus (js/Date.) (:started-at end-state))]
+    {:elapsed      elapsed
+     :inst-count   (:inst-count end-state)
+     :inst-per-sec (/ (:inst-count end-state) (/ elapsed 1000))}))
+
+;; TODO save prev version of machine to support STOP/CONTINUE
+(defn make-trampoline
+  [run-state debug? interval pipeline-size]
+  (fn trampoline [prev]
+    (let [{:keys [halted-fn stopped-fn]} @run-state
+          next                           (stepN run-state debug? prev pipeline-size)]
+      (cond (= prev next)
+            (do (halted-fn (make-end-status @run-state))
+                (swap! run-state assoc :running? false))
+            (not (:running? @run-state))
+            (stopped-fn (make-end-status @run-state))
+            :else (.setTimeout js/window trampoline interval next)))))
+
+;; TODO clean up the separation between the idea of a machine and a running
+;; machine. Maybe use new bound-fn to propagate config flags dynamically? Vs.
+;; threading through many functions.
 (defn make-vm
-  ([opts] (make-vm (new-machine) opts))
-  ([init-machine {:keys [interval
-                         pipeline-size
-                         printfn]
-                  ;; TODO defaults for perf, not debug
-                  :or   {interval      0
-                         pipeline-size 1}
-                  :as   opts}]
-   (let [machine    (atom (assoc init-machine
-                                 ;; Initialize machine with user-supplied output
-                                 ;; functions.
-                                 :printfn printfn))
-         running?   (atom false)
-         started-at (atom nil)
-         halted-fn  (atom nil)
-         stopped-fn (atom nil)]
-     (letfn [(trampoline [prev]
-               (let [next (stepN prev pipeline-size)]
-                 (cond (= prev next)
-                       (do (@halted-fn (date-minus (js/Date.) @started-at))
-                           (reset! running? false))
-                       (not @running?)
-                       (@stopped-fn (date-minus (js/Date.) @started-at))
-                       :else (.setTimeout js/window trampoline interval next))))]
-       (map->VirtualMachine
-        {:run  (fn run*
-                 ([]
-                  (if-let [first-line (first (keys (:lines @machine)))]
-                    (run* first-line)
-                    (log/error "No lines loaded")))
-                 ([line]
-                  (if @running?
-                    (throw (js/Error. "VM is already running"))
-                    (with-let [prom (js/Promise. (fn [resolve reject]
-                                                   (reset! halted-fn resolve)
-                                                   (reset! stopped-fn reject)))]
-                      (reset! started-at (js/Date.))
-                      (reset! running? true)
-                      (swap! machine assoc :line line :inst-ptr 0)
-                      (trampoline @machine)))))
-         :stop (fn [] (reset! running? false))
-         :load (fn [line instructions]
-                 (swap! machine assoc-in [:lines line] instructions))})))))
+  ([] (make-vm (new-machine)))
+  ([init-machine]
+   (let [run-state (atom (map->RunState
+                          {:machine    init-machine
+                           :running?   false
+                           :debug?     false
+                           :started-at nil
+                           :inst-count 0
+                           :halted-fn  nil
+                           :stopped-fn nil}))]
+     (map->RunningMachine
+      {:state (:machine @run-state)
+       :run   (fn run*
+                ([] (run* {}))
+                ([opts]
+                 (if-let [first-line (first (keys (-> @run-state :machine :lines)))]
+                   (run* first-line opts)
+                   (log/error "No lines loaded")))
+                ([line {:keys [debug?
+                               interval
+                               pipeline-size
+                               printfn
+                               profile?
+                               profile-name]
+                        :or   {debug?        false
+                               interval      0
+                               pipeline-size 20
+                               printfn       #(.log js/console %)
+                               profile?      false
+                               profile-name  (str (js/Date.))}
+                        :as   opts}]
+                 (if (:running? @run-state)
+                   (throw (js/Error. "VM is already running"))
+                   (let [trampoline (make-trampoline run-state debug? interval pipeline-size)]
+                     (with-let [prom (js/Promise.
+                                      (fn [resolve reject]
+                                        (swap! run-state assoc :halted-fn
+                                               #(do (if profile? (.profileEnd js/console))
+                                                    (resolve %)))
+                                        (swap! run-state assoc :stopped-fn
+                                               #(do (if profile? (.profileEnd js/console))
+                                                    (reject %)))))]
+                       (if profile? (.profile js/console profile-name))
+                       (swap! run-state assoc :started-at (js/Date.))
+                       (swap! run-state assoc :running? true)
+                       (swap! run-state update :machine merge
+                              {:line     line
+                               :inst-ptr 0
+                               :printfn  printfn})
+                       (trampoline (:machine @run-state)))))))
+       :stop  (fn [] (swap! run-state assoc :running? false))
+       :load  (fn [line instructions]
+                (swap! run-state assoc-in [:machine :lines line] instructions))}))))
 
 (defn load-line!
   [vm line insts]

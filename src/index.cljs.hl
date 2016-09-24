@@ -54,9 +54,7 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (let [vm   (vm/make-vm {:interval      0
-                          :pipeline-size 20
-                          :printfn       println!})
+  (let [vm   (vm/make-vm)
         ;; 10 N = 99
         ;; 20 PRINT N;" bottles of beer on the wall, ";N;" bottles of beer."
         ;; 30 PRINT "Take one down and pass it around, ";N - 1;" bottles of beer on the wall."
@@ -86,13 +84,15 @@
                   [:store "N"]
                   [:goto 20]]}]
     (vm/load-program! vm prog)
-    ;; (.setTimeout js/window #(vm/stop! vm) 1000)
-    (-> (vm/run! vm)
+    (-> (vm/run! vm {:profile?      false
+                     :debug?        false
+                     :pipeline-size 100
+                     :printfn       println!})
         (.then
          ;; Halted cleanly
-         (fn [ms] (log/info "Halted after #{ms} ms"))
+         (fn [end-status] (log/info "'(pr-str end-status)"))
          ;; Stopped early
-         (fn [ms] (log/info "Stopped by user after #{ms} ms"))))))
+         (fn [end-status] (log/info "'(pr-str end-status)"))))))
 
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]
