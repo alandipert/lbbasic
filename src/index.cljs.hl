@@ -54,7 +54,8 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (let [vm   (vm/make-vm)
+  (vm/doit)
+  #_(let [vm   (vm/make-vm)
         ;; 10 N = 99
         ;; 20 PRINT N;" bottles of beer on the wall, ";N;" bottles of beer."
         ;; 30 PRINT "Take one down and pass it around, ";N - 1;" bottles of beer on the wall."
