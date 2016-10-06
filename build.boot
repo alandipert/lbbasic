@@ -9,7 +9,8 @@
                  [tailrecursion/boot-heredoc "0.1.1"]
                  [com.lucasbradstreet/instaparse-cljs "1.4.1.2"]
                  [org.clojure/data.avl "0.0.16"]
-                 [adzerk/cljs-console "0.1.1"]]
+                 [adzerk/cljs-console "0.1.1"]
+                 [org.clojure/core.match "0.3.0-alpha4"]]
  :source-paths #{"src"}
  :asset-paths  #{"assets"})
 

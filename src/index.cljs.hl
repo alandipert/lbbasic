@@ -1,6 +1,7 @@
 (page "index.html"
   (:require [instaparse.core :as insta]
             [adzerk.cljs-console :as log :include-macros true]
+            [lbbasic.compiler :as c]
             [lbbasic.vm :as vm]))
 
 (def banner
@@ -54,6 +55,7 @@
   (println! banner)
   (println!)
   (println! "Ready.")
+  (c/doit)
   (vm/doit)
   #_(let [vm   (vm/make-vm)
         ;; 10 N = 99
