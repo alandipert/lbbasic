@@ -8,14 +8,16 @@
    ;;{{
    line         = (linum ws+)? stmt
    linum        = #'(0|([1-9][0-9]*))'
-   <stmt>       = assign | builtin
+   <stmt>       = assign | if | builtin
+   (* conditionals *)
+   if            = <'if'> ws+ expr ws+ <'then'> ws+ stmt ws+ (<'else'> ws+ stmt)?
    (* assignment *)
    assign       = var ws* <'='> ws* expr
    (* builtins *)
-   builtin      = print
+   <builtin>    = print
    print        = <'print'> ws* expr
    (* arithmethic *)
-   <expr>       = add-sub | value | var
+   <expr>       = add-sub | value | var | comparison
    <add-sub>    = mul-div | add | sub
    add          = add-sub ws* <'+'> ws* mul-div
    sub          = add-sub ws* <'-'> ws* mul-div
@@ -23,6 +25,8 @@
    mul          = mul-div ws* <'*'> ws* term
    div          = mul-div ws* <'/'> ws* term
    <term>       = float | int | var | <'('> ws* add-sub ws* <')'>
+   <comparison> = lt
+   lt           = expr ws* <'<'> ws* expr
    (* literals *)
    <value>      = string | float | int
    string       = #'\"[^\"]+\"'
@@ -49,28 +53,44 @@
 (defn concatv [& xs] (vec (apply concat xs)))
 
 (defn compile
-  [prog]
-  (match prog
-    [:builtin [:print x]]
+  [[op & kids :as node]]
+  (match node
+    ;; builtins
+    [:print x]
     (conj (compile x) [:print 1])
+    ;; constants
     [:int i]
     [[:push (js/parseInt i)]]
-    [:add x y]
-    (concatv (compile x) (compile y) [[:+]])
-    [:sub x y]
-    (concatv (compile x) (compile y) [[:-]])
-    [:div x y]
-    (concatv (compile x) (compile y) [[:/]])
-    [:mul x y]
-    (concatv (compile x) (compile y) [[:*]])
+    ;; arithmetic and comparison
+    [(:or :add :sub :div :mul :lt) x y]
+    (concatv (compile x) (compile y) [[op]])
+    ;; variables
     [:assign [:var var-name] expr]
     (conj (compile expr) [:store var-name])
-    :else
-    (throw (ex-info "Don't know how to compile" {:prog prog}))))
+    [:var var-name]
+    [[:load var-name]]
+    ;; conditionals
+    [:if test then else]
+    (let [[test then else] (map compile [test then else])]
+      (concatv test
+               [[:ifjmp (+ 2 (count else))]]
+               else
+               [[:jmp (inc (count then))]]
+               then))
+    :else (throw (ex-info "Don't know how to compile" {:node node}))))
 
 (defn doit
   []
-  #_(println (compile (statement (parse "10 print 1+2+3"))))
-  (println (compile (statement (parse "10 print 1-2/(3-4)+5*6"))))
-  #_(js/alert "did it")
-  #_(println (linum [:line [:foo 321]])))
+  (println (compile (statement (parse "10 if x < 2 then x = x - 1 else print 2"))))
+  ;; [[:load x]
+  ;;  [:push 2]
+  ;;  [:lt]
+  ;;  [:ifjmp 4]
+  ;;  [:push 2]
+  ;;  [:print 1]
+  ;;  [:jmp 5]
+  ;;  [:load x]
+  ;;  [:push 1]
+  ;;  [:sub]
+  ;;  [:store x]]
+  )

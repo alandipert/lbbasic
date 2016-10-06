@@ -93,7 +93,7 @@
 
 ;; Functions
 
-(defmethod inst :+
+(defmethod inst :add
   [machine _]
   (let [[x y :as args] (peekn (:stack machine) 2)
         ret            (condp = (mapv type args)
@@ -101,7 +101,7 @@
                          (str x y)
                          [js/Number js/Number]
                          (+ x y)
-                         :else (throw (ex-info "plus: unknown argument types"
+                         :else (throw (ex-info "add: unknown argument types"
                                                {:types (mapv type args)
                                                 :line (:line machine)})))]
     (-> machine
@@ -123,10 +123,10 @@
         (update :stack #(conj (popn % 2) ret))
         (update :inst-ptr inc))))
 
-(defmethod inst :- [machine _] (op-numeric - "minus" machine))
-(defmethod inst :* [machine _] (op-numeric * "times" machine))
-(defmethod inst :/ [machine _] (op-numeric / "divide" machine))
-(defmethod inst :% [machine _] (op-numeric mod "mod" machine))
+(defmethod inst :sub [machine _] (op-numeric - "subtract" machine))
+(defmethod inst :mul [machine _] (op-numeric * "multiply" machine))
+(defmethod inst :div [machine _] (op-numeric / "divide" machine))
+(defmethod inst :mod [machine _] (op-numeric mod "mod" machine))
 
 ;; Numeric comparisons
 
@@ -140,10 +140,10 @@
         (update :stack conj (bool (compare-fn x y)))
         (update :inst-ptr inc))))
 
-(defmethod inst :<  [machine _] (compare-numeric < machine))
-(defmethod inst :<= [machine _] (compare-numeric <= machine))
-(defmethod inst :>  [machine _] (compare-numeric > machine))
-(defmethod inst :>= [machine _] (compare-numeric >= machine))
+(defmethod inst :lt  [machine _] (compare-numeric < machine))
+(defmethod inst :lte [machine _] (compare-numeric <= machine))
+(defmethod inst :gt  [machine _] (compare-numeric > machine))
+(defmethod inst :gte [machine _] (compare-numeric >= machine))
 
 ;; I/O
 
@@ -240,17 +240,39 @@
 (defn doit
   []
   (let [vm (make-vm)]
-    (load! vm 10 [[:push 1]
+    (load! vm 10
+           [[:push 2]
+            [:push 1]
+            [:lt]
+            [:ifjmp 4]
+            [:push 2]
+            [:print 1]
+            [:jmp 3]
+            [:push 1]
+            [:print 1]]
+           #_
+           [[:push 0]
+            [:store "x"]
+            [:load "x"]
+            [:push 1]
+            [:lt]
+            [:ifjmp 4]
+            [:push 2]
+            [:store "x"]
+            [:jmp 3]
+            [:push 123]
+            [:print 1]]
+           #_[[:push 1]
                   [:push 2]
                   [:push 3]
                   [:push 4]
-                  [:-]
-                  [:/]
-                  [:-]
+                  [:sub]
+                  [:div]
+                  [:sub]
                   [:push 5]
                   [:push 6]
-                  [:*]
-                  [:+]
+                  [:mul]
+                  [:add]
                   [:print 1]])
     ;; (load! vm 10 [[:push 0] [:store "i"]])
     ;; (load! vm 11 [[:push "got here, sleeping 1000ms"] [:print 1]])
