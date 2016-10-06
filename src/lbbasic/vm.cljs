@@ -124,9 +124,9 @@
         (update :inst-ptr inc))))
 
 (defmethod inst :- [machine _] (op-numeric - "minus" machine))
-(defmethod inst :* [machine _] (op-numeric - "times" machine))
-(defmethod inst :/ [machine _] (op-numeric - "divide" machine))
-(defmethod inst :% [machine _] (op-numeric - "mod" machine))
+(defmethod inst :* [machine _] (op-numeric * "times" machine))
+(defmethod inst :/ [machine _] (op-numeric / "divide" machine))
+(defmethod inst :% [machine _] (op-numeric mod "mod" machine))
 
 ;; Numeric comparisons
 
@@ -240,15 +240,27 @@
 (defn doit
   []
   (let [vm (make-vm)]
-    (load! vm 10 [[:push 0] [:store "i"]])
-    (load! vm 11 [[:push "got here, sleeping 1000ms"] [:print 1]])
-    (load! vm 12 [[:push 1000] [:sleep]])
-    (load! vm 13 [[:push "done sleeping!"] [:print 1]])
-    (load! vm 15 [[:load "i"] [:push 1] [:+] [:store "i"]])
-    (load! vm 16 [[:push "got here, sleeping 1000ms"] [:print 1]])
-    (load! vm 17 [[:push 1000] [:sleep]])
-    (load! vm 20 [[:goto 15]])
+    (load! vm 10 [[:push 1]
+                  [:push 2]
+                  [:push 3]
+                  [:push 4]
+                  [:-]
+                  [:/]
+                  [:-]
+                  [:push 5]
+                  [:push 6]
+                  [:*]
+                  [:+]
+                  [:print 1]])
+    ;; (load! vm 10 [[:push 0] [:store "i"]])
+    ;; (load! vm 11 [[:push "got here, sleeping 1000ms"] [:print 1]])
+    ;; (load! vm 12 [[:push 1000] [:sleep]])
+    ;; (load! vm 13 [[:push "done sleeping!"] [:print 1]])
+    ;; (load! vm 15 [[:load "i"] [:push 1] [:+] [:store "i"]])
+    ;; (load! vm 16 [[:push "got here, sleeping 1000ms"] [:print 1]])
+    ;; (load! vm 17 [[:push 1000] [:sleep]])
+    ;; (load! vm 20 [[:goto 15]])
     (.then (run! vm 10) #(println "insts=" (:inst-count %)
                                   "i=" (get-in % [:vars "i"])))
-    (.setTimeout js/window break! 5000 vm)
+    ;; (.setTimeout js/window break! 5000 vm)
     ))
