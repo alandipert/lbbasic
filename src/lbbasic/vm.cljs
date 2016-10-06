@@ -128,6 +128,15 @@
 (defmethod inst :div [machine _] (op-numeric / "divide" machine))
 (defmethod inst :mod [machine _] (op-numeric mod "mod" machine))
 
+;; Equality
+
+(defmethod inst :eq
+  [{:keys [stack] :as machine}]
+  (-> machine
+      (update :stack popn 2)
+      (update :stack conj (apply = (peekn stack 2)))
+      (update :inst-ptr inc)))
+
 ;; Numeric comparisons
 
 (defn bool [x] (if x 1 0))
@@ -148,9 +157,9 @@
 ;; I/O
 
 (defmethod inst :print
-  [{:keys [stack printfn] :as machine} [_ argc & [separator]]]
+  [{:keys [stack printfn] :as machine} [_ argc separator]]
   (let [args (peekn stack argc)]
-    (printfn (str/join (or separator "") args))
+    (printfn (str/join separator args))
     (-> machine
         (update :stack popn argc)
         (update :inst-ptr inc))))

@@ -55,8 +55,8 @@
   (println! banner)
   (println!)
   (println! "Ready.")
-  (c/doit)
-  (vm/doit)
+  #_(c/doit)
+  #_(vm/doit)
   #_(let [vm   (vm/make-vm)
         ;; 10 N = 99
         ;; 20 PRINT N;" bottles of beer on the wall, ";N;" bottles of beer."
