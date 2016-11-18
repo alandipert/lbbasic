@@ -1,6 +1,6 @@
 (page "index.html"
-  (:require [instaparse.core :as insta]
-            [adzerk.cljs-console :as log :include-macros true]
+  (:require [adzerk.cljs-console :as log :include-macros true]
+            [instaparse.core :as insta]
             [lbbasic.compiler :as c]
             [lbbasic.vm :as vm]))
 
@@ -14,7 +14,7 @@
   ;;}}
   )
 
-(defc lines nil)
+(def lines (cell nil))
 (defc prompt-message nil)
 
 (defn print! [s]
@@ -24,84 +24,40 @@
   ([] (println! nil))
   ([l] (print! (str l "\n"))))
 
-(def parse-line
-  (insta/parser
-   ;;{{
-   line         = (linum whitespace+)? stmt
-   linum        = #'(0|([1-9][0-9]*))'
-   stmt         = builtin
-   expr         = value | var
-   (* builtins *)
-   builtin      = print | cls
-   print        = <'print'> whitespace expr
-   cls          = <'cls'>
-   (* TODO arithmethic *)
-   (* literals *)
-   <value>      = string | float | int
-   string       = #'\"[^\"]+\"'
-   float        = #'[+-]?(0|([1-9][0-9]*))(\.[0-9]+)'
-   int          = #'[+-]?(0|([1-9][0-9]*))'
-   (* variable names *)
-   <var>        = var-float | var-int | var-str
-   var-float    = #'[a-zA-Z]+'
-   var-int      = #'[a-zA-Z]+\%'
-   var-str      = #'[a-zA-Z]+\$'
-   (* util *)
-   <whitespace> = <#'\s+'>
-   ;;}}
-   ))
-
 (with-init!
   (println! banner)
   (println!)
-  (println! "Ready.")
-  #_(c/doit)
-  #_(vm/doit)
-  #_(let [vm   (vm/make-vm)
-        ;; 10 N = 99
-        ;; 20 PRINT N;" bottles of beer on the wall, ";N;" bottles of beer."
-        ;; 30 PRINT "Take one down and pass it around, ";N - 1;" bottles of beer on the wall."
-        ;; 40 IF N > 1 THEN PRINT:N = N - 1:GOTO 20
-        prog {10 [[:push 99]
-                  [:store "N"]]
-              20 [[:load "N"]
-                  [:push " bottles of beer on the wall, "]
-                  [:load "N"]
-                  [:push " bottles of beer."]
-                  [:print 4]]
-              30 [[:push "Take one down and pass it around, "]
-                  [:load "N"]
-                  [:push 1]
-                  [:-]
-                  [:push " bottles of beer on the wall."]
-                  [:print 3]]
-              40 [[:load "N"]
-                  [:push 1]
-                  [:>]
-                  [:ifjmp 2]
-                  [:jmp 7]
-                  [:print 0]
-                  [:load "N"]
-                  [:push 1]
-                  [:-]
-                  [:store "N"]
-                  [:goto 20]]}]
-    (vm/load-program! vm prog)
-    (-> (vm/run! vm {:profile?      false
-                     :debug?        false
-                     :pipeline-size 100
-                     :printfn       println!})
-        (.then
-         ;; Halted cleanly
-         (fn [end-status] (log/info "'(pr-str end-status)"))
-         ;; Stopped early
-         (fn [end-status] (log/info "'(pr-str end-status)"))))))
+  (println! "Ready."))
 
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]
   (let [elem$ (js/jQuery elem)]
     (.scrollTop elem$ (.prop elem$ "scrollHeight"))
     (.val elem$ str-cell)))
+
+(def vm (cell (vm/make-vm println!)))
+
+(defn handle-input
+  [line]
+  ;; TODO handle top-level commands before parsing
+  (let [parsed (insta/parse c/parser line)]
+    (if (insta/failure? parsed)
+      (swap! lines str "ERROR: " (pr-str (insta/get-failure parsed)))
+      (let [stmts (c/statements parsed)
+            linum (c/linum parsed)
+            code  (c/compile stmts)]
+        (println parsed)
+        (println (c/pr-asm code))
+        (if linum
+          ;; deferred execution
+          (vm/load! @vm linum code)
+          ;; immediate execution
+          (try
+            (doto @vm
+              (vm/load! -1 code)
+              (vm/run! -1))
+            (catch ExceptionInfo e
+              (println! (str "ERROR: " (.-message e) " - " (pr-str (ex-data e)))))))))))
 
 (html
   (head
@@ -113,12 +69,14 @@
       :disabled "true")
     (let [input-line (cell nil)]
       (form {:id "input"
-             :submit (fn []
-                       (let [[_ x] (parse-line @input-line)]
-                         (println (pr-str x))))}
+             :submit (fn [e]
+                       (if-not (empty? @input-line)
+                         (handle-input @input-line))
+                       (reset! input-line nil))}
         (span :id "prompt-message" prompt-message)
         (span :id "prompt" "➜")
         (with-let [elem (input {:id "line-input"
                                 :type "text"
+                                :value input-line
                                 :change #(reset! input-line @%)})]
           (with-init! (.focus elem)))))))

@@ -208,7 +208,10 @@
      (reset! machine prev)
      (let [next (step prev 1000)]
        (if (= prev next)
-         (resolve-fn prev)
+         (do
+           (swap! machine assoc :inst-count 0 :inst-ptr 0)
+           (reset! pending nil)
+           (resolve-fn prev))
          (reset! pending (.setTimeout js/window
                                       trampoline
                                       ;; If the sleep "interrupt" had a value,
@@ -220,15 +223,16 @@
                                       resolve-fn)))))))
 
 (defn make-vm
-  []
-  (let [pending    (atom nil)
-        resolve-fn (atom nil)
-        machine    (atom (assoc (new-machine) :printfn (or printfn println)))]
-    (map->VirtualMachine
-     {:machine    machine
-      :trampoline (make-trampoline pending machine)
-      :resolve-fn resolve-fn
-      :pending    pending})))
+  ([] (make-vm println))
+  ([printfn]
+   (let [pending    (atom nil)
+         resolve-fn (atom nil)
+         machine    (atom (assoc (new-machine) :printfn printfn))]
+     (map->VirtualMachine
+      {:machine    machine
+       :trampoline (make-trampoline pending machine)
+       :resolve-fn resolve-fn
+       :pending    pending}))))
 
 (defn load!
   [vm line instructions]
