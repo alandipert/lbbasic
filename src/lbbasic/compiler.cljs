@@ -10,47 +10,47 @@
 (def parser
   (insta/parser
    ;;{{
-   line           = (linum ws+)? stmts
+   line           = (linum ws)? stmts
    linum          = #'(0|([1-9][0-9]*))'
-   <stmts>        = stmt (ws* <':'> ws* stmt)*
+   <stmts>        = stmt (ws <':'> ws stmt)*
    <stmt>         = assign | if | builtin | goto
    (* if *)
    then           = stmts
    else           = stmts
-   if             = <'if'> ws+ expr ws+ <'then'> ws+ then ws* (ws+ <'else'> ws+ else ws*)? <'fi'>
+   if             = <'if'> ws expr ws <'then'> ws then ws (<'else'> ws else ws)? <'fi'>
    (* assignment *)
-   assign         = var ws* <'='> ws* expr
+   assign         = var ws <'='> ws expr
    (* goto *)
-   goto           = <'goto'> ws+ linum
+   goto           = <'goto'> ws linum
    (* builtins *)
    <builtin>      = print-newline | print-adjacent | print-tab
    print-newline  = <'print'>
-   print-adjacent = <'print'> ws+ expr (ws* <';'> ws* expr)*
-   print-tab      = <'print'> ws+ expr (ws* <','> ws* expr)+
+   print-adjacent = <'print'> ws expr (ws <';'> ws expr)*
+   print-tab      = <'print'> ws expr (ws <','> ws expr)+
    (* arithmethic *)
    <expr>         = add-sub | value | var | comparison
    <add-sub>      = mul-div | add | sub
-   add            = add-sub ws* <'+'> ws* mul-div
-   sub            = add-sub ws* <'-'> ws* mul-div
+   add            = add-sub ws <'+'> ws mul-div
+   sub            = add-sub ws <'-'> ws mul-div
    <mul-div>      = term | mul | div
-   mul            = mul-div ws* <'*'> ws* term
-   div            = mul-div ws* <'/'> ws* term
-   <term>         = float | int | var | <'('> ws* add-sub ws* <')'>
+   mul            = mul-div ws <'*'> ws term
+   div            = mul-div ws <'/'> ws term
+   <term>         = float | int | var | <'('> ws add-sub ws <')'>
    <comparison>   = eq | lt | lte | gt | gte
-   eq             = expr ws* <'=='> ws* expr
-   lt             = expr ws* <'<'> ws* expr
-   lte            = expr ws* <'<='> ws* expr
-   gt             = expr ws* <'>'> ws* expr
-   gte            = expr ws* <'>='> ws* expr
+   eq             = expr ws <'=='> ws expr
+   lt             = expr ws <'<'> ws expr
+   lte            = expr ws <'<='> ws expr
+   gt             = expr ws <'>'> ws expr
+   gte            = expr ws <'>='> ws expr
    (* literals *)
    <value>        = string | float | int
    string         = #'\"[^\"]+\"'
    float          = #'[+-]?(0|([1-9][0-9]*))(\.[0-9]+)'
    int            = #'[+-]?(0|([1-9][0-9]*))'
    (* variable reference *)
-   var            = #'[a-zA-Z]+'
+   var            = #'[a-zA-Z][a-zA-Z0-9]*'
    (* util *)
-   <ws>           = <#'\s'>
+   <ws>           = <#'\s*'>
    ;;}}
    ))
 
