@@ -6,7 +6,7 @@
    [adzerk.cljs-console :as log :include-macros true]
    [clojure.data.avl    :as avl]
    [clojure.string      :as str]
-   [lbbasic.util        :refer [peekn popn]]))
+   [lbbasic.util        :refer [after peekn popn]]))
 
 (defrecord Machine [stack               ;Operand stack
                     lines               ;AVL tree of BASIC program line numbers to vectors of instructions
@@ -212,15 +212,15 @@
            (swap! machine assoc :inst-count 0 :inst-ptr 0)
            (reset! pending nil)
            (resolve-fn prev))
-         (reset! pending (.setTimeout js/window
-                                      trampoline
-                                      ;; If the sleep "interrupt" had a value,
-                                      ;; wait that number of ms before the next
-                                      ;; instruction.
-                                      (or (:sleep-ms next) 0)
-                                      ;; Clear the :sleep-ms interrupt
-                                      (assoc next :sleep-ms nil)
-                                      resolve-fn)))))))
+         (reset! pending (after
+                          ;; If the sleep "interrupt" had a value,
+                          ;; wait that number of ms before the next
+                          ;; instruction.
+                          (or (:sleep-ms next) 0)
+                          #(trampoline
+                            ;; Clear the :sleep-ms interrupt
+                            (assoc next :sleep-ms nil)
+                            resolve-fn))))))))
 
 (defn make-vm
   ([] (make-vm println))
