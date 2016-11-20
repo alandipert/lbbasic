@@ -12,7 +12,7 @@
   [& xs]
   (vec (apply concat xs)))
 
-(def default-queue (atom cljs.core/PersistentQueue.EMPTY))
+(def ^:private default-queue (atom cljs.core/PersistentQueue.EMPTY))
 
 (defn- handle [q]
   (let [[not-before thunk] (peek @q)
