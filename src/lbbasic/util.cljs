@@ -18,7 +18,7 @@
   (let [[not-before thunk] (peek @q)
         now                (.getTime (js/Date.))]
     (if (<= not-before now)
-      (do (thunk) (swap! q pop))
+      (do (swap! q pop) (thunk))
       (.setTimeout js/window #(handle q) (- not-before now)))))
 
 (defn after
