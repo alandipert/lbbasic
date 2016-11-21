@@ -68,7 +68,8 @@
       :id "output"
       :disabled "true")
     (let [input-line (cell nil)]
-      (form {:id "input"
+      (form {:autocomplete "off"
+             :id "input"
              :submit (fn [e]
                        (if-not (empty? @input-line)
                          (handle-input @input-line))
