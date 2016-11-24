@@ -35,7 +35,7 @@
    <mul-div>      = term | mul | div
    mul            = mul-div ws <'*'> ws term
    div            = mul-div ws <'/'> ws term
-   <term>         = float | int | var | <'('> ws add-sub ws <')'>
+   <term>         = value | var | <'('> ws add-sub ws <')'>
    <comparison>   = eq | lt | lte | gt | gte
    eq             = expr ws <'=='> ws expr
    lt             = expr ws <'<'> ws expr
