@@ -6,30 +6,48 @@
 
 (def banner
   ;;{{
+  Little Bird Basic
+    __
+   ( ->
+   / )\
+  <_/_/
   ;;}}
   )
 
-(def lines (cell nil))
+(defn push
+  [v max-size x]
+  (conj (if (= (count v) max-size) (subvec v 1) v) x))
+
+(defelem console-output
+  [{:keys [lines] :as attrs}]
+  (let [elems (cell= (interpose \newline lines))]
+    (with-let [area (textarea (dissoc attrs :lines-cell)
+                      (for-tpl [x elems]
+                        (text x)))]
+      (let [area$ (js/jQuery area)]
+        (add-watch elems ::console-output
+                   (fn [& _]
+                     ;; Note: Ideally this would run only after for-tpl has done
+                     ;; its business. I'm not sure it necessarily does.
+                     (.scrollTop area$ (.prop area$ "scrollHeight"))))))))
+
+(def lines (cell []))
+(def +max-lines+ 100)
+(def output-area (console-output :id "output"
+                                 :lines lines
+                                 :disabled "true"))
+
 (defc prompt-message nil)
 
-(defn print! [s]
-  (swap! lines #(str % s)))
-
 (defn println!
-  ([] (println! nil))
-  ([l] (print! (str l "\n"))))
-
-(defmethod hoplon.core/do! :scroll-write
-  [elem _ str-cell]
-  (let [elem$ (js/jQuery elem)]
-    (.scrollTop elem$ (.prop elem$ "scrollHeight"))
-    (.val elem$ str-cell)))
+  ([] (println! ""))
+  ([l] (swap! lines push +max-lines+ l)))
 
 (def vm (cell (vm/make-vm {:printfn println!})))
 
 (with-init!
-  (println! banner)
-  (println!)
+  ;; (println! banner)
+  ;; (println!)
   (println! "Ready.")
   ;; Install Escape-key break handler
   (.on (js/jQuery js/document)
@@ -65,10 +83,11 @@
     (title "Little Bird Basic")
     (link :href "app.css" :rel "stylesheet"))
   (body
-    (textarea
-      :scroll-write lines
-      :id "output"
-      :disabled "true")
+    output-area
+    ;; (textarea
+    ;;   :scroll-write lines
+    ;;   :id "output"
+    ;;   :disabled "true")
     (let [input-line (cell nil)]
       (form {:autocomplete "off"
              :id "input"

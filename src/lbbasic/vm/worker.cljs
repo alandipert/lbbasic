@@ -1,4 +1,4 @@
-(ns lbbasic.vm-worker
+(ns lbbasic.vm.worker
   (:require [lbbasic.vm :as vm]
             [lbbasic.messages :as msg]
             [clojure.data.avl :as avl]
@@ -34,7 +34,7 @@
                      :inst-ptr 0
                      :printfn  #(msg/send! :print (js-obj "line" %))})]
     (letfn [(tramp [prev]
-              (let [next (vm/step prev 10)]
+              (let [next (vm/step prev 1)]
                 (if (= next prev)
                   (msg/send! :halt (js-obj "machine" (vm/serialize-machine next)))
                   (if @break?

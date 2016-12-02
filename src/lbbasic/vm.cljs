@@ -2,7 +2,8 @@
   (:refer-clojure :exclude [run!])
   (:require-macros
    [javelin.core :refer [with-let]]
-   [clojure.core.strint :refer [<<]])
+   [clojure.core.strint :refer [<<]]
+   [lbbasic.util        :refer [cond-let]])
   (:require
    [adzerk.cljs-console :as log :include-macros true]
    [clojure.data.avl    :as avl]
@@ -66,16 +67,24 @@
 
 ;; Setting/getting variables
 
+(def special-variables
+  {"time" #(.getTime (js/Date.))})
+
 (defmethod inst :store
   [machine [_ var-name]]
-  (-> machine
-      (assoc-in [:vars var-name] (peek (:stack machine)))
-      (update :stack pop)
-      (update :inst-ptr inc)))
+  (if (contains? special-variables var-name)
+    (throw (ex-info "can't set special var" {:name var-name
+                                             :line (:line machine)}))
+    (-> machine
+        (assoc-in [:vars var-name] (peek (:stack machine)))
+        (update :stack pop)
+        (update :inst-ptr inc))))
 
 (defmethod inst :load
   [machine [_ var-name]]
-  (if-let [val (get-in machine [:vars var-name])]
+  (if-let [val (if-let [special-var (get special-variables var-name)]
+                 (special-var)
+                 (get-in machine [:vars var-name]))]
     (-> machine
         (update :stack conj val)
         (update :inst-ptr inc))

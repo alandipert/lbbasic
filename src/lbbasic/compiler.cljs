@@ -79,6 +79,8 @@
   {:print-adjacent ""
    :print-tab \tab})
 
+(def special-variables #{"time"})
+
 (defn compile1
   [[op :as node]]
   (match node
@@ -88,6 +90,8 @@
              [[:print (count exprs) (print-sep op)]])
     [:print-newline]
     [[:print 0 ""]]
+    [:time]
+    [[:time]]
     ;; constants
     [:int i]
     [[:push (js/parseInt i)]]
@@ -100,7 +104,9 @@
     (concatv (compile1 x) (compile1 y) [[op]])
     ;; variable assignment and reference
     [:assign [:var var-name] expr]
-    (conj (compile1 expr) [:store var-name])
+    (if (contains? special-variables var-name)
+      (throw (ex-info "can't assign special var" {:name var-name}))
+      (conj (compile1 expr) [:store var-name]))
     [:var var-name]
     [[:load var-name]]
     ;; conditionals
