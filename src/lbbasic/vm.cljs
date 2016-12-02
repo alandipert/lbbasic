@@ -184,20 +184,6 @@
 
 ;; Stepper
 
-#_(defn step
-  [machine]
-  (let [{:keys [lines line inst-ptr]} machine
-        instructions                  (get lines line)]
-    (if (= (count instructions) inst-ptr)
-      ;; Line -1 is used to store the "immediate" line. Don't proceed to the
-      ;; next line automatically if the current line is -1.
-      (if (= line -1)
-        machine
-        (if-let [next-line (first (avl/nearest lines > line))]
-          (recur (assoc machine :line next-line :inst-ptr 0))
-          machine))
-      (inst machine (get instructions inst-ptr)))))
-
 (defn step
   ([machine]
    (let [{:keys [lines line inst-ptr]} machine
