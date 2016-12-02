@@ -20,7 +20,7 @@ body {
     overflow:hidden;
 }
 
-textarea#output[disabled="disabled"] {
+textarea#output {
     padding: 1vw;
     font-size: 1.2em;
     box-sizing: border-box;

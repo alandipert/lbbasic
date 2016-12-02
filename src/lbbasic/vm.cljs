@@ -14,6 +14,7 @@
 
 (defrecord Machine [stack               ;Operand stack
                     lines               ;AVL tree of BASIC program line numbers to vectors of instructions
+                    source              ;Sorted map of line number to source code string
                     line                ;Current line number
                     inst-ptr            ;Current instruction in the current line
                     vars                ;Map of global variables to their values
@@ -25,6 +26,7 @@
   (map->Machine
    {:stack            []
     :lines            (avl/sorted-map)
+    :source           (sorted-map)
     :line             nil
     :inst-ptr         0
     :vars             {}
@@ -41,17 +43,21 @@
   (-> (into {} machine)
       (assoc :printfn nil)
       (update :lines (partial into {}))
+      (update :source (partial into {}))
       cljs->js))
 
 (defn deserialize-machine
   "Reconstructs a machine from a web worker message."
   [machine]
   (-> (js->cljs machine)
-      (update :lines (partial into (avl/sorted-map)))))
+      (update :lines (partial into (avl/sorted-map)))
+      (update :source (partial into (sorted-map)))))
 
 (defn load
-  ([machine line instructions]
-   (update machine :lines assoc line instructions)))
+  ([machine line source instructions]
+   (-> machine
+       (update :lines assoc line instructions)
+       (update :source assoc line source))))
 
 ;; VM instructions
 
@@ -191,6 +197,13 @@
         (update :stack popn argc)
         (update :inst-ptr inc))))
 
+;; Reflection and interpreter state
+
+(defmethod inst :list
+  [{:keys [source printfn] :as machine} [from-line to-line]]
+  (doseq [[line text] source :when (not= line -1)] (printfn text))
+  (update machine :inst-ptr inc))
+
 ;; Stepper
 
 (defn step
@@ -246,8 +259,9 @@
       :resolve-fn resolve-fn})))
 
 (defn load!
-  [vm line instructions]
-  (update vm :machine swap! load line instructions))
+  [vm line source instructions]
+  (println vm)
+  (update vm :machine swap! load line source instructions))
 
 (defn run!
   [{:keys [machine worker resolve-fn] :as vm} line]

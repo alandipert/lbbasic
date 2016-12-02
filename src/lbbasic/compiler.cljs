@@ -23,10 +23,11 @@
    (* goto *)
    goto           = <'goto'> ws linum
    (* builtins *)
-   <builtin>      = print-newline | print-adjacent | print-tab
+   <builtin>      = print-newline | print-adjacent | print-tab | list
    print-newline  = <'print'>
    print-adjacent = <'print'> ws expr (ws <';'> ws expr)*
    print-tab      = <'print'> ws expr (ws <','> ws expr)+
+   list           = <'list'>
    (* arithmethic *)
    <expr>         = add-sub | value | var | comparison
    <add-sub>      = mul-div | add | sub
@@ -90,6 +91,8 @@
              [[:print (count exprs) (print-sep op)]])
     [:print-newline]
     [[:print 0 ""]]
+    [:list]
+    [[:list [nil nil]]]
     [:time]
     [[:time]]
     ;; constants

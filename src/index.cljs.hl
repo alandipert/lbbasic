@@ -33,9 +33,7 @@
 
 (def lines (cell []))
 (def +max-lines+ 100)
-(def output-area (console-output :id "output"
-                                 :lines lines
-                                 :disabled "true"))
+(def output-area (console-output :id "output" :lines lines))
 
 (defc prompt-message nil)
 
@@ -69,11 +67,11 @@
         (println (c/pr-asm code))
         (if linum
           ;; deferred execution
-          (vm/load! @vm linum code)
+          (vm/load! @vm linum line code)
           ;; immediate execution
           (try
             (doto @vm
-              (vm/load! -1 code)
+              (vm/load! -1 line code)
               (vm/run! -1))
             (catch ExceptionInfo e
               (println! (str "ERROR: " (.-message e) " - " (pr-str (ex-data e)))))))))))
