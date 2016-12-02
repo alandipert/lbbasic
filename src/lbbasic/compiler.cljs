@@ -139,34 +139,3 @@
          :linum (linum parsed)
          :stmts stmts
          :insts (compile stmts)}))))
-
-(defn doit
-  []
-  (time
-   (-> ;; "10ifx>1{print1:print2::printx}"
-       ;; "10?x>1{x=x-1}:printx"
-       "10 if x1 > 1 then print x1 else print x fi"
-       ;;"10 print x"
-       parser
-       ;; statements
-       ;; compile
-       println
-       ))
-  ;; (let [prog1 "10 print \"got here\",1,2,3 :if x==2 then x=x-1 else print 2.3 fi: print \"fin\";x < 2"
-  ;;       prog2 "10 if x <= 123 then print 321,3 fi:Y = Y *3:goto 123"
-  ;;       ;; prog2 "10 if x <= 3 then print 321,3: Y = Y*3"
-  ;;       prog3 "10 if x * 2 < 5 then print 1,2,3"
-  ;;       ;; prog3 "10 print 123: x=x+1:print x"
-  ;;       prog {10 "10 n = 99"
-  ;;             15 "10 print"
-  ;;             20 "20 print n;\" bottles of beer on the wall, \";n;\" bottles of beer\""
-  ;;             30 "30 print \"take one down and pass it around, \";n-1;\" bottles of beer on the wall.\""
-  ;;             40 "40 if n > 1 then n=n-1:goto 20 fi"}]
-  ;;   #_(println (pr-asm (compile (statements (parse prog2)))))
-  ;;   (doseq [[line s] prog]
-  ;;     (println line)
-  ;;     (println (statements (parse s)))
-  ;;     (println (pr-asm (compile (statements (parse s)))))
-  ;;     ))
-  )
-

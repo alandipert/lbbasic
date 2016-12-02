@@ -1,21 +1,22 @@
 (ns lbbasic.vm
   (:refer-clojure :exclude [run!])
   (:require-macros
-   [javelin.core :refer [with-let]])
+   [javelin.core :refer [with-let]]
+   [clojure.core.strint :refer [<<]])
   (:require
    [adzerk.cljs-console :as log :include-macros true]
    [clojure.data.avl    :as avl]
    [clojure.string      :as str]
-   [lbbasic.util        :refer [after peekn popn]]))
+   [lbbasic.util        :refer [after peekn popn]]
+   [lbbasic.messages    :as msg]
+   [cognitect.transit   :as t]))
 
 (defrecord Machine [stack               ;Operand stack
                     lines               ;AVL tree of BASIC program line numbers to vectors of instructions
                     line                ;Current line number
                     inst-ptr            ;Current instruction in the current line
-                    inst-count          ;Number of instructions executed so far
                     vars                ;Map of global variables to their values
-                    sleep-ms            ;If non-nil, number of milliseconds to sleep before next instruction
-                    printfn             ;Function to call to print a line
+                    printfn             ;Function to call to print a line.  Should only have a value in the Worker.
                     ])
 
 (defn new-machine
@@ -25,10 +26,27 @@
     :lines            (avl/sorted-map)
     :line             nil
     :inst-ptr         0
-    :inst-count       0
     :vars             {}
-    :sleep-ms         nil
-    :printfn          #(throw (js/Error. "printfn undefined"))}))
+    :printfn          nil}))
+
+(let [w (t/writer :json)
+      r (t/reader :json)]
+  (def cljs->js (partial t/write w))
+  (def js->cljs (partial t/read r)))
+
+(defn serialize-machine
+  "Prepares a machine for transfer to a web worker."
+  [machine]
+  (-> (into {} machine)
+      (assoc :printfn nil)
+      (update :lines (partial into {}))
+      cljs->js))
+
+(defn deserialize-machine
+  "Reconstructs a machine from a web worker message."
+  [machine]
+  (-> (js->cljs machine)
+      (update :lines (partial into (avl/sorted-map)))))
 
 (defn load
   ([machine line instructions]
@@ -164,138 +182,84 @@
         (update :stack popn argc)
         (update :inst-ptr inc))))
 
-(defmethod inst :sleep
-  [{:keys [stack] :as machine} _]
-  (let [ms (peek stack)]
-    (-> machine
-        (update :stack pop)
-        (assoc :sleep-ms ms)
-        (update :inst-ptr inc))))
-
 ;; Stepper
+
+#_(defn step
+  [machine]
+  (let [{:keys [lines line inst-ptr]} machine
+        instructions                  (get lines line)]
+    (if (= (count instructions) inst-ptr)
+      ;; Line -1 is used to store the "immediate" line. Don't proceed to the
+      ;; next line automatically if the current line is -1.
+      (if (= line -1)
+        machine
+        (if-let [next-line (first (avl/nearest lines > line))]
+          (recur (assoc machine :line next-line :inst-ptr 0))
+          machine))
+      (inst machine (get instructions inst-ptr)))))
 
 (defn step
   ([machine]
    (let [{:keys [lines line inst-ptr]} machine
          instructions                  (get lines line)]
      (if (= (count instructions) inst-ptr)
-       (if-let [next-line (first (avl/nearest lines > line))]
-         (recur (assoc machine :line next-line :inst-ptr 0))
-         machine)
-       (-> machine
-           (update :inst-count inc)
-           (inst (get instructions inst-ptr))))))
+       ;; Line -1 is used to store the "immediate" line. Don't proceed to the
+       ;; next line automatically if the current line is -1.
+       (if (= line -1)
+         machine
+         (if-let [next-line (first (avl/nearest lines > line))]
+           (recur (assoc machine :line next-line :inst-ptr 0))
+           machine))
+       (inst machine (get instructions inst-ptr)))))
   ([machine n] (step machine (step machine) (dec n)))
   ([prev next n]
-   (if (or (zero? n)
-           (= prev next)
-           ;; If the sleep-ms interrupt has a value, we need to stop computing
-           ;; during this timeout so we can schedule the next one sleep-ms in
-           ;; the future.
-           (:sleep-ms next))
+   (if (or (zero? n) (= prev next))
      next
      (recur next (step next) (dec n)))))
 
 ;; Runner
 
-(defrecord VirtualMachine [machine trampoline resolve-fn reject-fn pending])
-
-(defn make-trampoline
-  ([pending machine]
-   (make-trampoline pending machine 100))
-  ([pending machine insts-per-timeout]
-   (fn trampoline [prev resolve-fn]
-     (reset! machine prev)
-     (let [next (step prev 1000)]
-       (if (= prev next)
-         (do
-           (swap! machine assoc :inst-count 0 :inst-ptr 0)
-           (reset! pending nil)
-           (resolve-fn prev))
-         (reset! pending (after
-                          ;; If the sleep "interrupt" had a value,
-                          ;; wait that number of ms before the next
-                          ;; instruction.
-                          (or (:sleep-ms next) 0)
-                          #(trampoline
-                            ;; Clear the :sleep-ms interrupt
-                            (assoc next :sleep-ms nil)
-                            resolve-fn))))))))
+(defrecord VirtualMachine [machine worker resolve-fn reject-fn])
 
 (defn make-vm
-  ([] (make-vm println))
-  ([printfn]
-   (let [pending    (atom nil)
-         resolve-fn (atom nil)
-         machine    (atom (assoc (new-machine) :printfn printfn))]
-     (map->VirtualMachine
-      {:machine    machine
-       :trampoline (make-trampoline pending machine)
-       :resolve-fn resolve-fn
-       :pending    pending}))))
+  [{:keys [printfn] :as opts}]
+  (let [resolve-fn (atom nil)
+        machine    (atom (new-machine))
+        worker     (js/Worker. "vm_worker.js")]
+    (set! (.-onmessage worker)
+          (fn [msg]
+            (case (.. msg -data -type)
+              "halt"  (let [last-machine (deserialize-machine (.. msg -data -machine))]
+                        (reset! machine last-machine)
+                        (@resolve-fn last-machine))
+              "break" (let [last-machine (deserialize-machine (.. msg -data -machine))]
+                        (reset! machine last-machine)
+                        (printfn (<< "Break on line ~(:line last-machine), instruction ~(:inst-ptr last-machine)"))
+                        (@resolve-fn last-machine))
+              "print" (printfn (.. msg -data -line))
+              (throw (ex-info "Unknown message type received from worker"
+                              {:type (.. msg -data -type)
+                               :msg  msg})))))
+    (set! (.-onerror worker)
+          (fn [e]
+            (if (pos? (.indexOf (.-message e) "#error"))
+              (do (.preventDefault e)
+                  (printfn (.-message e))))))
+    (map->VirtualMachine
+     {:machine    machine
+      :worker     worker
+      :resolve-fn resolve-fn})))
 
 (defn load!
   [vm line instructions]
   (update vm :machine swap! load line instructions))
 
 (defn run!
-  [{:keys [machine pending resolve-fn trampoline] :as vm} line]
-  (if @pending
-    (throw (ex-info "VM is already running" {:vm vm}))
-    (with-let [prom (js/Promise. #(reset! resolve-fn %))]
-      (trampoline @machine @resolve-fn))))
+  [{:keys [machine worker resolve-fn] :as vm} line]
+  (with-let [prom (js/Promise. #(reset! resolve-fn %))]
+    (msg/send! worker :run #js{"machine" (serialize-machine @machine)
+                               "line"    line})))
 
 (defn break!
-  [{:keys [machine resolve-fn] :as vm}]
-  (update vm :pending #(.clearTimeout js/window @%))
-  (@resolve-fn @machine))
-
-(defn doit
-  []
-  (let [vm (make-vm)]
-    (load! vm 10
-           [[:push 2]
-            [:push 1]
-            [:lt]
-            [:ifjmp 4]
-            [:push 2]
-            [:print 1]
-            [:jmp 3]
-            [:push 1]
-            [:print 1]]
-           #_
-           [[:push 0]
-            [:store "x"]
-            [:load "x"]
-            [:push 1]
-            [:lt]
-            [:ifjmp 4]
-            [:push 2]
-            [:store "x"]
-            [:jmp 3]
-            [:push 123]
-            [:print 1]]
-           #_[[:push 1]
-                  [:push 2]
-                  [:push 3]
-                  [:push 4]
-                  [:sub]
-                  [:div]
-                  [:sub]
-                  [:push 5]
-                  [:push 6]
-                  [:mul]
-                  [:add]
-                  [:print 1]])
-    ;; (load! vm 10 [[:push 0] [:store "i"]])
-    ;; (load! vm 11 [[:push "got here, sleeping 1000ms"] [:print 1]])
-    ;; (load! vm 12 [[:push 1000] [:sleep]])
-    ;; (load! vm 13 [[:push "done sleeping!"] [:print 1]])
-    ;; (load! vm 15 [[:load "i"] [:push 1] [:+] [:store "i"]])
-    ;; (load! vm 16 [[:push "got here, sleeping 1000ms"] [:print 1]])
-    ;; (load! vm 17 [[:push 1000] [:sleep]])
-    ;; (load! vm 20 [[:goto 15]])
-    (.then (run! vm 10) #(println "insts=" (:inst-count %)
-                                  "i=" (get-in % [:vars "i"])))
-    ;; (.setTimeout js/window break! 5000 vm)
-    ))
+  [{:keys [worker] :as vm}]
+  (msg/send! worker :interrupt #js{"name" "break" "value" true}))

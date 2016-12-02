@@ -6,11 +6,6 @@
 
 (def banner
   ;;{{
-  Little Bird Basic
-     __
-    ( ->
-    / )\
-   <_/_/
   ;;}}
   )
 
@@ -24,18 +19,23 @@
   ([] (println! nil))
   ([l] (print! (str l "\n"))))
 
-(with-init!
-  (println! banner)
-  (println!)
-  (println! "Ready."))
-
 (defmethod hoplon.core/do! :scroll-write
   [elem _ str-cell]
   (let [elem$ (js/jQuery elem)]
     (.scrollTop elem$ (.prop elem$ "scrollHeight"))
     (.val elem$ str-cell)))
 
-(def vm (cell (vm/make-vm println!)))
+(def vm (cell (vm/make-vm {:printfn println!})))
+
+(with-init!
+  (println! banner)
+  (println!)
+  (println! "Ready.")
+  ;; Install Escape-key break handler
+  (.on (js/jQuery js/document)
+       "keyup"
+       #(when (= (.-keyCode %) 27)
+          (vm/break! @vm))))
 
 (defn handle-input
   [line]
@@ -46,6 +46,7 @@
       (let [stmts (c/statements parsed)
             linum (c/linum parsed)
             code  (c/compile stmts)]
+        (println! line)
         (println parsed)
         (println (c/pr-asm code))
         (if linum
@@ -61,6 +62,7 @@
 
 (html
   (head
+    (title "Little Bird Basic")
     (link :href "app.css" :rel "stylesheet"))
   (body
     (textarea

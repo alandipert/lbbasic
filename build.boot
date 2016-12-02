@@ -1,5 +1,5 @@
 (set-env!
- :dependencies '[[adzerk/boot-cljs          "1.7.228-1"]
+ :dependencies '[[adzerk/boot-cljs          "1.7.228-2"]
                  [adzerk/boot-reload        "0.4.12"]
                  [hoplon/boot-hoplon        "0.2.4"]
                  [hoplon/hoplon             "6.0.0-alpha16"]
@@ -10,7 +10,9 @@
                  [com.lucasbradstreet/instaparse-cljs "1.4.1.2"]
                  [org.clojure/data.avl "0.0.16"]
                  [adzerk/cljs-console "0.1.1"]
-                 [org.clojure/core.match "0.3.0-alpha4"]]
+                 [org.clojure/core.match "0.3.0-alpha4"]
+                 [com.cognitect/transit-cljs "0.8.237"]
+                 [org.clojure/core.incubator "0.1.4"]]
  :source-paths #{"src"}
  :asset-paths  #{"assets"})
 
@@ -30,10 +32,12 @@
    (heredoc :file-ext ".hl")
    (heredoc :file-ext ".cljs")
    (hoplon)
-   (reload)
+   (reload :ids #{"index.html"}
+           :only-by-re [#"^((?!worker).)*$"])
    ;; Suppress because of core.match
    (cljs :compiler-options {:warnings {:undeclared-var false}})
-   (serve :port 8000)))
+   (serve :port 8000)
+   (target)))
 
 (deftask prod
   "Build lbbasic for production deployment."
