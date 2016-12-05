@@ -32,8 +32,7 @@
    (heredoc :file-ext ".hl")
    (heredoc :file-ext ".cljs")
    (hoplon)
-   (reload :ids #{"index.html"}
-           :only-by-re [#"^((?!worker).)*$"])
+   (reload)
    ;; Suppress because of core.match
    (cljs :compiler-options {:warnings {:undeclared-var false}})
    (serve :port 8000)

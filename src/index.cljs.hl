@@ -21,25 +21,37 @@
 (defelem console-output
   [{:keys [lines] :as attrs}]
   (let [elems (cell= (interpose \newline lines))]
-    (with-let [area (textarea (dissoc attrs :lines-cell)
-                      (for-tpl [x elems]
-                        (text x)))]
-      (let [area$ (js/jQuery area)]
-        (add-watch elems ::console-output
-                   (fn [& _]
-                     ;; Note: Ideally this would run only after for-tpl has done
-                     ;; its business. I'm not sure it necessarily does.
-                     (.scrollTop area$ (.prop area$ "scrollHeight"))))))))
+    (textarea (dissoc attrs :lines)
+      (for-tpl [x elems]
+        (text x)))))
 
-(def lines (cell []))
-(def +max-lines+ 100)
-(def output-area (console-output :id "output" :lines lines))
+(defn removeChildNative [obj child]
+  (.call @#'hoplon.core/removeChild obj child))
+
+(defn appendChildNative [obj child]
+  (.call @#'hoplon.core/appendChild obj child))
+
+(defelem line-printer
+  [{:keys [max-rows] :or {max-rows 10} :as attrs} _]
+  (let [area (textarea (dissoc attrs max-rows))]
+    {:println! (fn println!
+                 ([] (println! ""))
+                 ([line]
+                  (let [n (.. area -childNodes -length)]
+                    (if (= n 0)
+                      (appendChildNative area (.createTextNode js/document (str line)))
+                      (let [last-line (aget (.-childNodes area) (dec n))]
+                        (set! (.-textContent last-line) (str (.-textContent last-line) \newline))
+                        (appendChildNative area (.createTextNode js/document (str line)))
+                        (when (= n max-rows) (removeChildNative area (aget (.-childNodes area) 0))))))
+                  (set! (.-scrollTop area) (.-scrollHeight area))))
+     :textarea area}))
+
+(let [printer (line-printer :max-rows 1000 :id "output")]
+  (def output-area (:textarea printer))
+  (def println! (:println! printer)))
 
 (defc prompt-message nil)
-
-(defn println!
-  ([] (println! ""))
-  ([l] (swap! lines push +max-lines+ l)))
 
 (def vm (cell (vm/make-vm {:printfn println!})))
 
@@ -58,7 +70,7 @@
   ;; TODO handle top-level commands before parsing
   (let [parsed (insta/parse c/parser line)]
     (if (insta/failure? parsed)
-      (swap! lines str "ERROR: " (pr-str (insta/get-failure parsed)))
+      (println! (str "ERROR: " (pr-str (insta/get-failure parsed))))
       (let [stmts (c/statements parsed)
             linum (c/linum parsed)
             code  (c/compile stmts)]

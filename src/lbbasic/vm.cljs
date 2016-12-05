@@ -1,16 +1,14 @@
 (ns lbbasic.vm
   (:refer-clojure :exclude [run!])
   (:require-macros
-   [javelin.core :refer [with-let]]
-   [clojure.core.strint :refer [<<]]
-   [lbbasic.util        :refer [cond-let]])
+   [javelin.core :refer [with-let cell=]]
+   [clojure.core.strint :refer [<<]])
   (:require
    [adzerk.cljs-console :as log :include-macros true]
    [clojure.data.avl    :as avl]
    [clojure.string      :as str]
    [lbbasic.util        :refer [after peekn popn]]
-   [lbbasic.messages    :as msg]
-   [cognitect.transit   :as t]))
+   [javelin.core        :refer [cell]]))
 
 (defrecord Machine [stack               ;Operand stack
                     lines               ;AVL tree of BASIC program line numbers to vectors of instructions
@@ -18,40 +16,19 @@
                     line                ;Current line number
                     inst-ptr            ;Current instruction in the current line
                     vars                ;Map of global variables to their values
-                    printfn             ;Function to call to print a line.  Should only have a value in the Worker.
+                    interrupt           ;If set: [:interrupt.name <val>]
                     ])
 
 (defn new-machine
   []
   (map->Machine
-   {:stack            []
-    :lines            (avl/sorted-map)
-    :source           (sorted-map)
-    :line             nil
-    :inst-ptr         0
-    :vars             {}
-    :printfn          nil}))
-
-(let [w (t/writer :json)
-      r (t/reader :json)]
-  (def cljs->js (partial t/write w))
-  (def js->cljs (partial t/read r)))
-
-(defn serialize-machine
-  "Prepares a machine for transfer to a web worker."
-  [machine]
-  (-> (into {} machine)
-      (assoc :printfn nil)
-      (update :lines (partial into {}))
-      (update :source (partial into {}))
-      cljs->js))
-
-(defn deserialize-machine
-  "Reconstructs a machine from a web worker message."
-  [machine]
-  (-> (js->cljs machine)
-      (update :lines (partial into (avl/sorted-map)))
-      (update :source (partial into (sorted-map)))))
+   {:stack     []
+    :lines     (avl/sorted-map)
+    :source    (sorted-map)
+    :line      nil
+    :inst-ptr  0
+    :vars      {}
+    :interrupt nil}))
 
 (defn load
   ([machine line source instructions]
@@ -190,19 +167,21 @@
 ;; I/O
 
 (defmethod inst :print
-  [{:keys [stack printfn] :as machine} [_ argc separator]]
+  [{:keys [stack] :as machine} [_ argc separator]]
   (let [args (peekn stack argc)]
-    (printfn (str/join separator args))
     (-> machine
+        (assoc :interrupt [:print [(str/join separator args)]])
         (update :stack popn argc)
         (update :inst-ptr inc))))
 
 ;; Reflection and interpreter state
 
 (defmethod inst :list
-  [{:keys [source printfn] :as machine} [from-line to-line]]
-  (doseq [[line text] source :when (not= line -1)] (printfn text))
-  (update machine :inst-ptr inc))
+  [{:keys [source] :as machine} [_ from-line to-line]]
+  (let [source-lines (for [[line text] source :when (not= line -1)] text)]
+    (-> machine
+        (assoc :interrupt [:print source-lines])
+        (update :inst-ptr inc))))
 
 ;; Stepper
 
@@ -211,8 +190,8 @@
    (let [{:keys [lines line inst-ptr]} machine
          instructions                  (get lines line)]
      (if (= (count instructions) inst-ptr)
-       ;; Line -1 is used to store the "immediate" line. Don't proceed to the
-       ;; next line automatically if the current line is -1.
+       ;; Line -1 is special: it's used to store the "immediate" line. Don't
+       ;; proceed to the next line automatically if the current line is -1.
        (if (= line -1)
          machine
          (if-let [next-line (first (avl/nearest lines > line))]
@@ -221,54 +200,77 @@
        (inst machine (get instructions inst-ptr)))))
   ([machine n] (step machine (step machine) (dec n)))
   ([prev next n]
-   (if (or (zero? n) (= prev next))
+   (if (or (zero? n)
+           (= prev next)
+           (:interrupt next))
      next
      (recur next (step next) (dec n)))))
 
 ;; Runner
 
-(defrecord VirtualMachine [machine worker resolve-fn reject-fn])
+(defrecord VirtualMachine [machine
+                           pending-timeout
+                           running?
+                           resolve-fn
+                           printfn])
+
+;; Interrupt handling
+
+(defmulti handle-interrupt (fn [vm machine [interrupt-name val]] interrupt-name))
+
+(defmethod handle-interrupt :print
+  [{:keys [printfn] :as vm} machine [_ lines :as interrupt]]
+  (doseq [line lines] (printfn line)))
+
+(defn handle-clear-interrupt
+  [vm {:keys [interrupt] :as machine}]
+  (if interrupt
+    (do (handle-interrupt vm machine interrupt)
+        (assoc machine :interrupt nil))
+    machine))
 
 (defn make-vm
-  [{:keys [printfn] :as opts}]
-  (let [resolve-fn (atom nil)
-        machine    (atom (new-machine))
-        worker     (js/Worker. "vm_worker.js")]
-    (set! (.-onmessage worker)
-          (fn [msg]
-            (case (.. msg -data -type)
-              "halt"  (let [last-machine (deserialize-machine (.. msg -data -machine))]
-                        (reset! machine last-machine)
-                        (@resolve-fn last-machine))
-              "break" (let [last-machine (deserialize-machine (.. msg -data -machine))]
-                        (reset! machine last-machine)
-                        (printfn (<< "Break on line ~(:line last-machine), instruction ~(:inst-ptr last-machine)"))
-                        (@resolve-fn last-machine))
-              "print" (printfn (.. msg -data -line))
-              (throw (ex-info "Unknown message type received from worker"
-                              {:type (.. msg -data -type)
-                               :msg  msg})))))
-    (set! (.-onerror worker)
-          (fn [e]
-            (if (pos? (.indexOf (.-message e) "#error"))
-              (do (.preventDefault e)
-                  (printfn (.-message e))))))
+  [{:keys [printfn]
+    :or {printfn (.. js/window -console -log (bind (js* "this")))}
+    :as opts}]
+  (let [machine         (atom (new-machine))
+        pending-timeout (cell nil)
+        running?        (cell= (boolean pending-timeout))
+        resolve-fn      (atom nil)]
     (map->VirtualMachine
-     {:machine    machine
-      :worker     worker
-      :resolve-fn resolve-fn})))
+     {:machine         machine
+      :pending-timeout pending-timeout
+      :running?        running?
+      :resolve-fn      resolve-fn
+      :printfn         printfn})))
 
 (defn load!
-  [vm line source instructions]
-  (println vm)
+  [{:keys [running?] :as vm} line source instructions]
+  (when @running? (throw (js/Error. "Can't load instructions, VM is currently running.")))
   (update vm :machine swap! load line source instructions))
 
 (defn run!
-  [{:keys [machine worker resolve-fn] :as vm} line]
+  [{:keys [machine running? pending-timeout resolve-fn printfn] :as vm} line]
+  (when @running? (throw (js/Error. "Can't run VM, it's already running.")))
   (with-let [prom (js/Promise. #(reset! resolve-fn %))]
-    (msg/send! worker :run #js{"machine" (serialize-machine @machine)
-                               "line"    line})))
+    (letfn [(tramp []
+              (let [prev @machine
+                    next (step prev 10)]
+                (if (= :break (get-in next [:interrupt 0]))
+                  ;; [:break] interrupt is special because we need to stop the trampoline.
+                  (do (reset! pending-timeout nil)
+                      (@resolve-fn {:msg :break :machine prev}))
+                  ;; Other kinds of interrupt are handled here.
+                  (let [next-handled (handle-clear-interrupt vm next)]
+                    (if (= next-handled prev)
+                      (do (reset! pending-timeout nil)
+                          (@resolve-fn {:msg :halted :machine prev}))
+                      (do (reset! machine next-handled)
+                          (reset! pending-timeout (js/setTimeout tramp 0))))))))]
+      (swap! machine merge {:line line :inst-ptr 0})
+      (reset! pending-timeout (js/setTimeout tramp 0)))))
 
 (defn break!
   [{:keys [worker] :as vm}]
-  (msg/send! worker :interrupt #js{"name" "break" "value" true}))
+  (with-let [vm vm]
+    (swap! vm update assoc :interrupt [:break true])))

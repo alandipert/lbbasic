@@ -1,3 +1,0 @@
-{:require [lbbasic.vm.worker]
- :init-fns [lbbasic.vm.worker/init]
- :compiler-options {:optimizations :simple}}

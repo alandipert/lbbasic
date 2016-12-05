@@ -92,7 +92,7 @@
     [:print-newline]
     [[:print 0 ""]]
     [:list]
-    [[:list [nil nil]]]
+    [[:list nil nil]]
     [:time]
     [[:time]]
     ;; constants
