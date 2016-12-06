@@ -8,9 +8,21 @@
             [lbbasic.ui.components :as ui]
             [lbbasic.pp :refer [pr-asm]]))
 
+(def banner
+"  __
+ ( ->
+ / )\\  Little Bird BASIC
+<_/_/
+ \" \"
+--------------------------
+")
+
 (def saved-programs (store/local-storage (cell {}) :programs))
 
-(let [printer (ui/make-line-printer :max-rows 200 :id "output")]
+(let [printer (ui/make-line-printer
+               :max-rows 200
+               :id "output"
+               :readonly "true")]
   (def output-area (:textarea printer))
   (def println! (:println! printer))
   (def clear! (:clear! printer)))
@@ -21,6 +33,7 @@
 (def vm-state (:state vm))
 
 (with-init!
+  (println! banner)
   (println! "Ready.")
   ;; Install Escape-key break handler
   (.on (js/jQuery js/document)
@@ -71,13 +84,20 @@
      [linum-str (second (re-matches #"^dis (\d+)$" (.toLowerCase line)))]
      (let [linum (js/parseInt linum-str)]
        (if-let [code (get (:lines @(:machine vm)) linum)]
-         (println! (str "Disassembly of line " linum ":" \newline (pr-asm code)))
+         (do (println! line)
+             (println! (str "Disassembly of line " linum ":" \newline (pr-asm code))))
          (println! "ERROR: No line: " linum))
        (reset! input-cell nil))
      ;; clear the screen (TODO: should be a statement/bytecode)
      [_ (= "cls" (.toLowerCase line))]
      (do (clear!)
          (reset! input-cell nil))
+     ;; new machine
+     [_ (= "new" (.toLowerCase line))]
+     (do (update vm :machine reset! (vm/new-machine))
+         (println! "Cleared program.")
+         (reset! input-cell nil))
+     ;; TODO list should be a command, not a bytecode
      ;; immediate and deferred-mode programs
      :else
      (do (let [parsed (insta/parse c/parser line)]
@@ -101,7 +121,7 @@
 
 (html
   (head
-    (title "Little Bird Basic")
+    (title "Little Bird BASIC")
     (link :href "app.css" :rel "stylesheet"))
   (body
     (img :toggle (cell= (= ~(:state vm) :run)) :id "gears" :src "gears.svg")

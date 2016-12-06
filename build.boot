@@ -34,7 +34,7 @@
    (hoplon)
    (reload)
    ;; Suppress because of core.match
-   (cljs :compiler-options {:warnings {:undeclared-var false}})
+   (cljs)
    (serve :port 8000)
    (target)))
 
