@@ -1,19 +1,20 @@
 (ns lbbasic.vm
   (:refer-clojure :exclude [run!])
   (:require-macros
-   [javelin.core :refer [with-let cell=]]
+   [javelin.core :refer [with-let cell= dosync]]
    [clojure.core.strint :refer [<<]])
   (:require
    [adzerk.cljs-console :as log :include-macros true]
    [clojure.data.avl    :as avl]
    [clojure.string      :as str]
-   [lbbasic.util        :refer [after peekn popn]]
+   [lbbasic.util        :refer [peekn popn]]
    [javelin.core        :refer [cell]]))
 
 (defrecord Machine [stack               ;Operand stack
                     lines               ;AVL tree of BASIC program line numbers to vectors of instructions
                     source              ;Sorted map of line number to source code string
                     line                ;Current line number
+                    goto-flipper        ;Hack to make 10 goto 10 work
                     inst-ptr            ;Current instruction in the current line
                     vars                ;Map of global variables to their values
                     interrupt           ;If set: [:interrupt.name <val>]
@@ -22,13 +23,14 @@
 (defn new-machine
   []
   (map->Machine
-   {:stack     []
-    :lines     (avl/sorted-map)
-    :source    (sorted-map)
-    :line      nil
-    :inst-ptr  0
-    :vars      {}
-    :interrupt nil}))
+   {:stack        []
+    :lines        (avl/sorted-map)
+    :source       (sorted-map)
+    :line         nil
+    :goto-flipper true
+    :inst-ptr     0
+    :vars         {}
+    :interrupt    nil}))
 
 (defn load
   ([machine line source instructions]
@@ -81,7 +83,10 @@
 (defmethod inst :goto
   [machine [_ goto-line]]
   (if (contains? (:lines machine) goto-line)
-    (assoc machine :line goto-line :inst-ptr 0)
+    (-> machine
+        ;; Makes 10 goto 10 possible
+        (update :goto-flipper not)
+        (assoc :line goto-line :inst-ptr 0))
     (throw (ex-info "goto: goto-line doesn't exist"
                     {:line (:line machine) :goto goto-line}))))
 
@@ -198,20 +203,22 @@
            (recur (assoc machine :line next-line :inst-ptr 0))
            machine))
        (inst machine (get instructions inst-ptr)))))
-  ([machine n] (step machine (step machine) (dec n)))
-  ([prev next n]
-   (if (or (zero? n)
-           (= prev next)
-           (:interrupt next))
-     next
-     (recur next (step next) (dec n)))))
+  ;; Secret arity
+  ([machine _ n]
+   (if (or (zero? n) (:interrupt machine))
+     machine
+     (recur (step machine) nil (dec n))))
+  ([machine n]
+   ;; It's important to step an odd number of times in support of
+   ;; the :goto-flipper.
+   (step machine nil (if (even? n) (inc n) n))))
 
 ;; Runner
 
 (defrecord VirtualMachine [machine
+                           user-break
                            pending-timeout
-                           running?
-                           resolve-fn
+                           state
                            printfn])
 
 ;; Interrupt handling
@@ -233,44 +240,57 @@
   [{:keys [printfn]
     :or {printfn (.. js/window -console -log (bind (js* "this")))}
     :as opts}]
-  (let [machine         (atom (new-machine))
+  (let [machine         (cell (new-machine))
+        user-break      (atom nil)
         pending-timeout (cell nil)
-        running?        (cell= (boolean pending-timeout))
-        resolve-fn      (atom nil)]
+        ;;one of :stop, :run, :break
+        ;; TODO: :error state, show errors
+        state           (cell :stop)]
     (map->VirtualMachine
      {:machine         machine
+      :user-break      user-break
       :pending-timeout pending-timeout
-      :running?        running?
-      :resolve-fn      resolve-fn
+      :state           state
       :printfn         printfn})))
 
+(defn clear!
+  [{:keys [state] :as vm}]
+  (when (= @state :run) (throw (js/Error. "Can't load instructions, VM is currently running.")))
+  (update vm :machine reset! (new-machine)))
+
 (defn load!
-  [{:keys [running?] :as vm} line source instructions]
-  (when @running? (throw (js/Error. "Can't load instructions, VM is currently running.")))
+  [{:keys [state] :as vm} line source instructions]
+  (when (= @state :run) (throw (js/Error. "Can't load instructions, VM is currently running.")))
   (update vm :machine swap! load line source instructions))
 
 (defn run!
-  [{:keys [machine running? pending-timeout resolve-fn printfn] :as vm} line]
-  (when @running? (throw (js/Error. "Can't run VM, it's already running.")))
-  (with-let [prom (js/Promise. #(reset! resolve-fn %))]
-    (letfn [(tramp []
-              (let [prev @machine
-                    next (step prev 10)]
-                (if (= :break (get-in next [:interrupt 0]))
-                  ;; [:break] interrupt is special because we need to stop the trampoline.
-                  (do (reset! pending-timeout nil)
-                      (@resolve-fn {:msg :break :machine prev}))
-                  ;; Other kinds of interrupt are handled here.
-                  (let [next-handled (handle-clear-interrupt vm next)]
-                    (if (= next-handled prev)
-                      (do (reset! pending-timeout nil)
-                          (@resolve-fn {:msg :halted :machine prev}))
-                      (do (reset! machine next-handled)
-                          (reset! pending-timeout (js/setTimeout tramp 0))))))))]
-      (swap! machine merge {:line line :inst-ptr 0})
-      (reset! pending-timeout (js/setTimeout tramp 0)))))
+  [{:keys [machine user-break state pending-timeout printfn] :as vm} line]
+  (when (= @state :run) (throw (js/Error. "Can't run VM, it's already running.")))
+  (letfn [(tramp [prev]
+            (if @user-break
+              (dosync (reset! user-break false)
+                      (reset! pending-timeout nil)
+                      (reset! machine prev)
+                      (reset! state :break))
+              (let [prev-handled (handle-clear-interrupt vm prev)
+                    next         (step prev-handled 10)]
+                (if (= prev-handled next)
+                  (dosync (reset! pending-timeout nil)
+                          (reset! machine next)
+                          (reset! state :stop))
+                  (dosync (reset! machine next)
+                          (reset! pending-timeout (js/setTimeout #(tramp next) 0)))))))]
+    (dosync
+     (reset! pending-timeout (js/setTimeout #(tramp (merge @machine {:line line :inst-ptr 0})) 0))
+     (reset! state :run))))
 
 (defn break!
-  [{:keys [worker] :as vm}]
-  (with-let [vm vm]
-    (swap! vm update assoc :interrupt [:break true])))
+  [{:keys [state] :as vm}]
+  (when (= @state :run) (update vm :user-break reset! true)))
+
+(defn run-now!
+  [{:keys [state] :as vm} source instructions]
+  (when (= @state :run) (throw (js/Error. "Can't run immediate code, VM already running.")))
+  (doto vm
+    (load! -1 source instructions)
+    (run! -1)))

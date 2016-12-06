@@ -3,9 +3,9 @@
    [adzerk.cljs-console :as log :include-macros true]
    [cljs.core.match :refer-macros [match]]
    [cljs.pprint :as pp]
-   [clojure.string :as str]
    [instaparse.core :as insta]
-   [lbbasic.util :refer [concatv]]))
+   [lbbasic.util :refer [concatv]]
+   [lbbasic.pp :refer [pr-asm]]))
 
 (def parser
   (insta/parser
@@ -67,14 +67,6 @@
     [:line [:linum _] & stmts] stmts
     [:line & stmts] stmts
     :else (throw (ex-info "Unknown parse result" {:parsed parsed}))))
-
-(defn pr-asm
-  [[x & xs :as asm]]
-  (if (= 1 (count asm))
-    (pr-str asm)
-    (str "[" (pr-str x) "\n"
-         (str/join "\n" (map #(str " " (pr-str %)) xs))
-         "]")))
 
 (def print-sep
   {:print-adjacent ""

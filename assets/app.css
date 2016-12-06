@@ -1,3 +1,10 @@
+@font-face {
+    font-family: 'Fantasque Sans Mono';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Fantasque Sans Mono'), url('FantasqueSansMonoRegular.ttf') format('truetype');
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -18,6 +25,7 @@ body {
     min-height: 100%;
     flex-direction: column;
     overflow:hidden;
+    font-family: 'Fantasque Sans Mono', monospace;
 }
 
 textarea#output {
@@ -30,7 +38,12 @@ textarea#output {
     width: 100%;
     flex: 1;
     color: black;
-    font-family: monospace;
+}
+
+img#gears {
+    position: absolute;
+    top: 1vw;
+    right: 1vw;
 }
 
 form#input {
@@ -40,20 +53,17 @@ form#input {
     min-width: 100%;
     flex-direction: row;
     padding: 10px 0 10px 0;
-    font-family: monospace;
 }
 
 span#prompt-message {
     display: block;
     font-size: 1.2em;
     padding: 0 3px 0 3px;
-    font-family: monospace;
 }
 
 span#prompt {
     display: block;
     font-size: 1.2em;
-    font-family: monospace;
     padding-right: 3px;
 }
 
@@ -61,7 +71,7 @@ input#line-input {
     font-size: 1.2em;
     border: none;
     overflow: hidden;
-    font-family: monospace;
     flex: 1;
+    font-family: 'Fantasque Sans Mono', monospace;
 }
 

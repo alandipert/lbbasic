@@ -2,4 +2,7 @@
 
 (defmacro cond-let [& clauses]
   (when-let [[binding expr & clauses] (seq clauses)]
-    `(if-let ~binding ~expr (cond-let ~@clauses))))
+    (if (vector? binding)
+      `(if-let ~binding ~expr (cond-let ~@clauses))
+      ;; To support :else
+      expr)))

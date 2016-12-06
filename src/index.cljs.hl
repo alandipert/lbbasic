@@ -1,110 +1,117 @@
 (page "index.html"
-  (:require [adzerk.cljs-console :as log :include-macros true]
+  (:require-macros [lbbasic.util :refer [cond-let]])
+  (:require [hoplon.storage-atom :as store]
+            [adzerk.cljs-console :as log :include-macros true]
             [instaparse.core :as insta]
             [lbbasic.compiler :as c]
-            [lbbasic.vm :as vm]))
+            [lbbasic.vm :as vm]
+            [lbbasic.ui.components :as ui]
+            [lbbasic.pp :refer [pr-asm]]))
 
-(def banner
-  ;;{{
-  Little Bird Basic
-    __
-   ( ->
-   / )\
-  <_/_/
-  ;;}}
-  )
+(def saved-programs (store/local-storage (cell {}) :programs))
 
-(defn push
-  [v max-size x]
-  (conj (if (= (count v) max-size) (subvec v 1) v) x))
-
-(defelem console-output
-  [{:keys [lines] :as attrs}]
-  (let [elems (cell= (interpose \newline lines))]
-    (textarea (dissoc attrs :lines)
-      (for-tpl [x elems]
-        (text x)))))
-
-(defn removeChildNative [obj child]
-  (.call @#'hoplon.core/removeChild obj child))
-
-(defn appendChildNative [obj child]
-  (.call @#'hoplon.core/appendChild obj child))
-
-(defelem line-printer
-  [{:keys [max-rows] :or {max-rows 10} :as attrs} _]
-  (let [area (textarea (dissoc attrs max-rows))]
-    {:println! (fn println!
-                 ([] (println! ""))
-                 ([line]
-                  (let [n (.. area -childNodes -length)]
-                    (if (= n 0)
-                      (appendChildNative area (.createTextNode js/document (str line)))
-                      (let [last-line (aget (.-childNodes area) (dec n))]
-                        (set! (.-textContent last-line) (str (.-textContent last-line) \newline))
-                        (appendChildNative area (.createTextNode js/document (str line)))
-                        (when (= n max-rows) (removeChildNative area (aget (.-childNodes area) 0))))))
-                  (set! (.-scrollTop area) (.-scrollHeight area))))
-     :textarea area}))
-
-(let [printer (line-printer :max-rows 1000 :id "output")]
+(let [printer (ui/make-line-printer :max-rows 200 :id "output")]
   (def output-area (:textarea printer))
-  (def println! (:println! printer)))
+  (def println! (:println! printer))
+  (def clear! (:clear! printer)))
 
 (defc prompt-message nil)
 
-(def vm (cell (vm/make-vm {:printfn println!})))
+(def vm (vm/make-vm {:printfn println!}))
+(def vm-state (:state vm))
 
 (with-init!
-  ;; (println! banner)
-  ;; (println!)
   (println! "Ready.")
   ;; Install Escape-key break handler
   (.on (js/jQuery js/document)
        "keyup"
-       #(when (= (.-keyCode %) 27)
-          (vm/break! @vm))))
+       #(when (= (.-keyCode %) 27) (vm/break! vm)))
+  (add-watch vm-state ::break-monitor (fn [_ _ _ v]
+                                        (when (= v :break)
+                                          (let [{:keys [line inst-ptr]} @(:machine vm)]
+                                            (println! (str "BREAK on line " line ", instruction " inst-ptr)))))))
 
 (defn handle-input
-  [line]
-  ;; TODO handle top-level commands before parsing
-  (let [parsed (insta/parse c/parser line)]
-    (if (insta/failure? parsed)
-      (println! (str "ERROR: " (pr-str (insta/get-failure parsed))))
-      (let [stmts (c/statements parsed)
-            linum (c/linum parsed)
-            code  (c/compile stmts)]
-        (println! line)
-        (println parsed)
-        (println (c/pr-asm code))
-        (if linum
-          ;; deferred execution
-          (vm/load! @vm linum line code)
-          ;; immediate execution
-          (try
-            (doto @vm
-              (vm/load! -1 line code)
-              (vm/run! -1))
-            (catch ExceptionInfo e
-              (println! (str "ERROR: " (.-message e) " - " (pr-str (ex-data e)))))))))))
+  [input-cell]
+  (let [line @input-cell]
+    (cond-let
+     ;; load
+     [program-name (second (re-matches #"^load (\w+)$" (.toLowerCase line)))]
+     (do (if-let [saved (get @saved-programs program-name)]
+           (do (update vm :machine swap! (fn [machine]
+                                           (merge-with into
+                                                       (-> machine
+                                                           (update :lines empty)
+                                                           (update :source empty))
+                                                       saved)))
+               (println! (str "Loaded '" program-name "'")))
+           (println! (str "ERROR: No program named '" program-name "'")))
+         (reset! input-cell nil))
+     ;; save
+     [program-name (second (re-matches #"^save (\w+)$" (.toLowerCase line)))]
+     (do (swap! saved-programs assoc program-name (select-keys @(:machine vm) [:lines :source]))
+         (println! (str "Saved '" program-name "'"))
+         (reset! input-cell nil))
+     ;; delete a line
+     [linum-str (re-matches #"^\d+$" line)]
+     (let [linum (js/parseInt linum-str)]
+       (do (update vm :machine swap! (fn [machine]
+                                     (-> machine
+                                         (update :lines dissoc linum)
+                                         (update :source dissoc linum))))
+           (println! (str "Deleted " linum))
+           (reset! input-cell nil)))
+     ;; edit a line
+     [linum-str (second (re-matches #"^:(\d+)$" line))]
+     (let [linum (js/parseInt linum-str)]
+       (if-let [source-line (get (:source @(:machine vm)) linum)]
+         (reset! input-cell source-line)
+         (println "ERROR: No line: " linum)))
+     ;; disassemble a line
+     [linum-str (second (re-matches #"^dis (\d+)$" (.toLowerCase line)))]
+     (let [linum (js/parseInt linum-str)]
+       (if-let [code (get (:lines @(:machine vm)) linum)]
+         (println! (pr-asm code))
+         (println! "ERROR: No line: " linum))
+       (reset! input-cell nil))
+     ;; clear the screen (TODO: should be a statement/bytecode)
+     [_ (= "cls" (.toLowerCase line))]
+     (do (clear!)
+         (reset! input-cell nil))
+     ;; immediate and deferred-mode programs
+     :else
+     (do (let [parsed (insta/parse c/parser line)]
+           (if (insta/failure? parsed)
+             (println! (str "ERROR: " (pr-str (insta/get-failure parsed))))
+             (let [stmts (c/statements parsed)
+                   linum (c/linum parsed)
+                   code  (c/compile stmts)]
+               (println! line)
+               (println parsed)
+               (println (pr-asm code))
+               (if linum
+                 ;; deferred execution
+                 (vm/load! vm linum line code)
+                 ;; immediate execution
+                 (try
+                   (vm/run-now! vm line code)
+                   (catch ExceptionInfo e
+                     (println! (str "ERROR: " (.-message e) " - " (pr-str (ex-data e))))))))))
+         (reset! input-cell nil)))))
 
 (html
   (head
     (title "Little Bird Basic")
     (link :href "app.css" :rel "stylesheet"))
   (body
+    (img :toggle (cell= (= ~(:state vm) :run)) :id "gears" :src "gears.svg")
     output-area
-    ;; (textarea
-    ;;   :scroll-write lines
-    ;;   :id "output"
-    ;;   :disabled "true")
     (let [input-line (cell nil)]
       (form {:autocomplete "off"
              :id "input"
              :submit (fn [e]
                        (if-not (empty? @input-line)
-                         (handle-input @input-line))
-                       (reset! input-line nil))}
+                         (handle-input input-line)))}
         (span :id "prompt-message" prompt-message)
         (span :id "prompt" "➜")
         (with-let [elem (input {:id "line-input"
