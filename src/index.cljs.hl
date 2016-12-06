@@ -59,7 +59,7 @@
                                      (-> machine
                                          (update :lines dissoc linum)
                                          (update :source dissoc linum))))
-           (println! (str "Deleted " linum))
+           (println! (str "Deleted line " linum))
            (reset! input-cell nil)))
      ;; edit a line
      [linum-str (second (re-matches #"^:(\d+)$" line))]
@@ -71,7 +71,7 @@
      [linum-str (second (re-matches #"^dis (\d+)$" (.toLowerCase line)))]
      (let [linum (js/parseInt linum-str)]
        (if-let [code (get (:lines @(:machine vm)) linum)]
-         (println! (pr-asm code))
+         (println! (str "Disassembly of line " linum ":" \newline (pr-asm code)))
          (println! "ERROR: No line: " linum))
        (reset! input-cell nil))
      ;; clear the screen (TODO: should be a statement/bytecode)
