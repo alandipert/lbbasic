@@ -208,6 +208,9 @@
            machine))
        (inst machine (get instructions inst-ptr)))))
   ;; Secret arity
+  ;; We don't check whether we're done in this loop, so there will be up to n-1
+  ;; possibly redundant steps performed. Oh well. On the plus side, the logic
+  ;; for stopping lives in only one place, where this function is first called.
   ([machine _ n]
    (if (or (zero? n) (:interrupt machine))
      machine
@@ -267,26 +270,34 @@
   (when (= @state :run) (throw (js/Error. "Can't load instructions, VM is currently running.")))
   (update vm :machine swap! load line source instructions))
 
+(def +insts-per-timeout+ 10)
+
 (defn run!
   [{:keys [machine user-break state pending-timeout printfn] :as vm} line]
   (when (= @state :run) (throw (js/Error. "Can't run VM, it's already running.")))
   (letfn [(tramp [prev]
             (if @user-break
-              (dosync (reset! user-break false)
-                      (reset! pending-timeout nil)
-                      (reset! machine prev)
-                      (reset! state :break))
+              (dosync (js/clearTimeout @pending-timeout)
+                      (resets! user-break false
+                               pending-timeout nil
+                               machine (handle-clear-interrupt vm prev)
+                               state :break))
               (let [prev-handled (handle-clear-interrupt vm prev)
-                    next         (step prev-handled 10)]
+                    next         (step prev-handled +insts-per-timeout+)]
                 (if (= prev-handled next)
-                  (dosync (reset! pending-timeout nil)
-                          (reset! machine next)
-                          (reset! state :stop))
-                  (dosync (reset! machine next)
-                          (reset! pending-timeout (js/setTimeout #(tramp next) 0)))))))]
+                  (dosync (js/clearTimeout @pending-timeout)
+                          (resets! pending-timeout nil
+                                   machine next
+                                   state :stop))
+                  (dosync (resets! machine next
+                                   pending-timeout (js/setTimeout #(tramp next) 0)))))))]
     (dosync
-     (reset! pending-timeout (js/setTimeout #(tramp (merge @machine {:line line :inst-ptr 0})) 0))
-     (reset! state :run))))
+     (resets! pending-timeout (with-timeout 0
+                                (as-> (new-machine) |
+                                  (select-keys | [:stack :line :inst-ptr])
+                                  (merge @machine |)
+                                  (tramp |)))
+              state :run))))
 
 (defn break!
   [{:keys [state] :as vm}]
