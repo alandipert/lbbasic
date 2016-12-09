@@ -1,14 +1,12 @@
 (ns lbbasic.vm
   (:refer-clojure :exclude [run!])
+  (:require [clojure.data.avl :as avl]
+            [clojure.string :as str]
+            [javelin.core :refer [cell]]
+            [lbbasic.util :refer [peekn popn resets!]])
   (:require-macros
-   [javelin.core :refer [with-let cell= dosync]]
-   [clojure.core.strint :refer [<<]])
-  (:require
-   [adzerk.cljs-console :as log :include-macros true]
-   [clojure.data.avl    :as avl]
-   [clojure.string      :as str]
-   [lbbasic.util        :refer [peekn popn]]
-   [javelin.core        :refer [cell]]))
+   [hoplon.core :refer [with-timeout]]
+   [javelin.core :refer [dosync]]))
 
 (defrecord Machine [stack               ;Operand stack
                     lines               ;AVL tree of BASIC program line numbers to vectors of instructions
