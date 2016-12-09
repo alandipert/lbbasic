@@ -54,7 +54,7 @@
 (defn linum
   [parsed]
   (match parsed
-    [:line [:linum n] & _] (.parseInt js/window n)
+    [:line [:linum n] & _] (js/parseInt n)
     :else nil))
 
 (defn statements
