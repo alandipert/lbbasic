@@ -1,11 +1,7 @@
 (ns lbbasic.compiler
-  (:require
-   [adzerk.cljs-console :as log :include-macros true]
-   [cljs.core.match :refer-macros [match]]
-   [cljs.pprint :as pp]
-   [instaparse.core :as insta]
-   [lbbasic.util :refer [concatv]]
-   [lbbasic.pp :refer [pr-asm]]))
+  (:require [cljs.core.match :refer-macros [match]]
+            [instaparse.core :as insta]
+            [lbbasic.util :refer [concatv]]))
 
 (def parser
   (insta/parser
