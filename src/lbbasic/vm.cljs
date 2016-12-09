@@ -52,14 +52,20 @@
 
 ;; Setting/getting variables
 
-(def special-variables
-  {"time" #(.getTime (js/Date.))})
+(defmulti get-variable (fn [machine var-name] var-name))
+
+(defmethod get-variable "time"
+  [machine _]
+  (.getTime (js/Date.)))
+
+(defmethod get-variable :default
+  [machine var-name]
+  (get-in machine [:vars var-name]))
 
 (defmethod inst :store
   [machine [_ var-name]]
-  (if (contains? special-variables var-name)
-    (throw (ex-info "can't set special var" {:name var-name
-                                             :line (:line machine)}))
+  (if (get-method get-variable var-name)
+    (throw (ex-info "can't set special var" {:name var-name :line (:line machine)}))
     (-> machine
         (assoc-in [:vars var-name] (peek (:stack machine)))
         (update :stack pop)
@@ -67,9 +73,7 @@
 
 (defmethod inst :load
   [machine [_ var-name]]
-  (if-let [val (if-let [special-var (get special-variables var-name)]
-                 (special-var)
-                 (get-in machine [:vars var-name]))]
+  (if-let [val (get-variable machine var-name)]
     (-> machine
         (update :stack conj val)
         (update :inst-ptr inc))
