@@ -5,8 +5,7 @@
             [javelin.core :refer [cell]]
             [lbbasic.util :refer [peekn popn resets!]])
   (:require-macros
-   [hoplon.core :refer [with-timeout]]
-   [javelin.core :refer [dosync]]))
+   [hoplon.core :refer [with-timeout]]))
 
 (defrecord Machine [stack               ;Operand stack
                     lines               ;AVL tree of BASIC program line numbers to vectors of instructions
@@ -274,27 +273,26 @@
   (when (= @state :run) (throw (js/Error. "Can't run VM, it's already running.")))
   (letfn [(tramp [prev]
             (if @user-break
-              (dosync (js/clearTimeout @pending-timeout)
-                      (resets! user-break false
-                               pending-timeout nil
-                               machine (handle-clear-interrupt vm prev)
-                               state :break))
+              (do (js/clearTimeout @pending-timeout)
+                  (resets! user-break false
+                           pending-timeout nil
+                           machine (handle-clear-interrupt vm prev)
+                           state :break))
               (let [prev-handled (handle-clear-interrupt vm prev)
                     next         (step prev-handled +insts-per-timeout+)]
                 (if (= prev-handled next)
-                  (dosync (js/clearTimeout @pending-timeout)
-                          (resets! pending-timeout nil
-                                   machine next
-                                   state :stop))
-                  (dosync (resets! machine next
-                                   pending-timeout (js/setTimeout #(tramp next) 0)))))))]
-    (dosync
-     (resets! pending-timeout (with-timeout 0
-                                (as-> (new-machine) |
-                                  (select-keys | [:stack :line :inst-ptr])
-                                  (merge @machine |)
-                                  (tramp |)))
-              state :run))))
+                  (do (js/clearTimeout @pending-timeout)
+                      (resets! pending-timeout nil
+                               machine next
+                               state :stop))
+                  (resets! machine next
+                           pending-timeout (js/setTimeout #(tramp next) 0))))))]
+    (resets! pending-timeout (with-timeout 0
+                               (as-> (new-machine) |
+                                 (select-keys | [:stack :line :inst-ptr])
+                                 (merge @machine |)
+                                 (tramp |)))
+             state :run)))
 
 (defn break!
   [{:keys [state] :as vm}]

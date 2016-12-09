@@ -1,4 +1,5 @@
-(ns lbbasic.util)
+(ns lbbasic.util
+  (:require-macros [javelin.core :refer [dosync]]))
 
 (defn peekn
   [v n]
@@ -15,6 +16,7 @@
 (defn resets!
   "Like reset!, but takes any number of atom/value pairs and resets them all a la setq"
   [& atm-vals]
-  (doseq [[atm val] (partition 2 atm-vals)]
-    (reset! atm val)))
+  (dosync
+   (doseq [[atm val] (partition 2 atm-vals)]
+     (reset! atm val))))
 
