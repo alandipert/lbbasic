@@ -62,7 +62,7 @@
 
 (defmethod inst :store
   [machine [_ var-name]]
-  (if (get-method get-variable var-name)
+  (if (contains? (methods get-variable) var-name)
     (throw (ex-info "can't set special var" {:name var-name :line (:line machine)}))
     (-> machine
         (assoc-in [:vars var-name] (peek (:stack machine)))
@@ -75,8 +75,7 @@
     (-> machine
         (update :stack conj val)
         (update :inst-ptr inc))
-    (throw (ex-info "undefined var" {:name var-name
-                                     :line (:line machine)}))))
+    (throw (ex-info "undefined var" {:name var-name :line (:line machine)}))))
 
 ;; Flow control
 
