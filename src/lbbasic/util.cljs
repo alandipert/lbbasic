@@ -12,3 +12,9 @@
   [& xs]
   (vec (apply concat xs)))
 
+(defn resets!
+  "Like reset!, but takes any number of atom/value pairs and resets them all a la setq"
+  [& atm-vals]
+  (doseq [[atm val] (partition 2 atm-vals)]
+    (reset! atm val)))
+
