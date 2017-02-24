@@ -35,7 +35,7 @@
    (reload)
    ;; Suppress because of core.match
    (cljs)
-   (serve :port 8000)
+   (serve :port 8001)
    (target)))
 
 (deftask prod
