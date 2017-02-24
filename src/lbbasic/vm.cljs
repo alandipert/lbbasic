@@ -20,14 +20,14 @@
 (defn new-machine
   []
   (map->Machine
-   {:stack        []
-    :lines        (avl/sorted-map)
-    :source       (sorted-map)
-    :line         nil
-    :goto-flipper true
-    :inst-ptr     0
-    :vars         {}
-    :interrupt    nil}))
+   {:stack     []
+    :lines     (avl/sorted-map)
+    :source    (sorted-map)
+    :line      nil
+    :halted?   false
+    :inst-ptr  0
+    :vars      {}
+    :interrupt nil}))
 
 (defn load
   ([machine line source instructions]
@@ -84,8 +84,6 @@
   [machine [_ goto-line]]
   (if (contains? (:lines machine) goto-line)
     (-> machine
-        ;; Makes 10 goto 10 possible
-        (update :goto-flipper not)
         (assoc :line goto-line :inst-ptr 0))
     (throw (ex-info "goto: goto-line doesn't exist"
                     {:line (:line machine) :goto goto-line}))))
@@ -198,10 +196,10 @@
        ;; Line -1 is special: it's used to store the "immediate" line. Don't
        ;; proceed to the next line automatically if the current line is -1.
        (if (= line -1)
-         machine
+         (assoc machine :halted? true)
          (if-let [next-line (first (avl/nearest lines > line))]
            (recur (assoc machine :line next-line :inst-ptr 0))
-           machine))
+           (assoc machine :halted? true)))
        (inst machine (get instructions inst-ptr)))))
   ;; Secret arity
   ;; We don't check whether we're done in this loop, so there will be up to n-1
@@ -280,10 +278,10 @@
                            state :break))
               (let [prev-handled (handle-clear-interrupt vm prev)
                     next         (step prev-handled +insts-per-timeout+)]
-                (if (= prev-handled next)
+                (if (:halted? next)
                   (do (js/clearTimeout @pending-timeout)
                       (resets! pending-timeout nil
-                               machine next
+                               machine prev-handled
                                state :stop))
                   (resets! machine next
                            pending-timeout (js/setTimeout #(tramp next) 0))))))]
