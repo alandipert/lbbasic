@@ -5,7 +5,7 @@
 
 (def parser
   (insta/parser
-   ;;{{
+   "
    line           = (linum ws)? stmts
    linum          = #'(0|([1-9][0-9]*))'
    <stmts>        = stmt (ws <':'> ws stmt)*
@@ -41,14 +41,14 @@
    gte            = expr ws <'>='> ws expr
    (* literals *)
    <value>        = string | float | int
-   string         = #'\"[^\"]+\"'
-   float          = #'[+-]?(0|([1-9][0-9]*))(\.[0-9]+)'
+   string         = #'\\\"[^\\\"]+\\\"'
+   float          = #'[+-]?(0|([1-9][0-9]*))(\\.[0-9]+)'
    int            = #'[+-]?(0|([1-9][0-9]*))'
    (* variable reference *)
    var            = #'[a-zA-Z][a-zA-Z0-9]*'
    (* util *)
-   <ws>           = <#'\s*'>
-   ;;}}
+   <ws>           = <#'\\s*'>
+   "
    ))
 
 (defn linum

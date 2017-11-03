@@ -1,5 +1,5 @@
 (ns lbbasic.util
-  (:require-macros [javelin.core :refer [dosync]]))
+  (:require [javelin.core :refer [dosync]]))
 
 (defn peekn
   [v n]
